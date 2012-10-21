@@ -79,6 +79,7 @@ __shared__ uint8_t sboxdec[256] = {
 
 int main(int argc, char *argv[]){
 	
+	printf("Teste");
 	return 0;
 	
 }
