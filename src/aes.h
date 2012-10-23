@@ -1,8 +1,14 @@
 #include <stdint.h>
 
 
-void encriptar_aes();
-void decriptar_aes();
+void encriptar(uint *tp, uint *chave, uint *tc, uint tamanhoChave);
+void aes(uint *cp, uint *cW, uint Nr);
+void decriptar(uint *tc, uint *chave, uint *tp, uint tamanhoChave);
+void invaes(uint *cp, uint *cW, uint Nr);
+void ExpandKeys();
+
+typedef unsigned char byte;
+typedef unsigned int  uint;
 
 __global__ void SubBytes(uint *estado);
 __global__ void ShiftRows(uint *estado);
@@ -10,7 +16,7 @@ __global__ void MixColumns(uint *estado);
 __global__ void AddRoundKey(uint *estado, uint *chavee);
 
 //Tabela S-BOX
-__device__ __constant__ uint8_t sbox[256] = {
+__device__ __constant__ uint sbox[256] = {
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5,
     0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
     0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0,
@@ -45,8 +51,8 @@ __device__ __constant__ uint8_t sbox[256] = {
     0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16
 };
 
-//Tabela S-BOX da decriptacao
-__device__ __constant__ uint8_t sboxdec[256] = {
+//Tabela S-BOX da expansão de chaves
+static const uint hsbox[256] = {
     0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38,
     0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb,
     0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87,
@@ -80,3 +86,7 @@ __device__ __constant__ uint8_t sboxdec[256] = {
     0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26,
     0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d
 };
+
+static const uint8_t Rcon[] = { 0, 0x01000000, 0x02000000, 0x04000000, 0x08000000,
+                             0x10000000, 0x20000000, 0x40000000, 0x80000000,
+                             0x1B000000, 0x36000000 };
