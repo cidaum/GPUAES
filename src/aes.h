@@ -1,13 +1,13 @@
 #include <stdint.h>
 
-
-void encriptar(uint *tp, uint *chave, uint *tc, uint tamanhoChave);
+void aes_cuda(uint *in, uint *chave, uint *out, uint tamanhoChave, uint offset, uint acao); 
 void aes(uint *cp, uint *cW, uint Nr);
-void decriptar(uint *tc, uint *chave, uint *tp, uint tamanhoChave);
 void invAes(uint *cp, uint *cW, uint Nr);
-void ExpandKeys();
+void ExpandKeys(uint *key, uint keysize, uint *W, uint Nk, uint Nr);
+void printHexArray(uint *array, uint size);
+uint stringToByteArray(char *str, uint *array[]);
 
-typedef unsigned char byte;
+//typedef unsigned char byte;
 typedef unsigned int  uint;
 
 __global__ void SubBytes(uint *estado);
