@@ -2,10 +2,11 @@
 #include <stdint.h>
 #include "aes.h"
 
-#define xtime(x) ((x<<1) ^ (((x>>7) & 1) * 0x1b))
+//#define xtime(x) ((x<<1) ^ (((x>>7) & 1) * 0x1b))
+#define aes_mul(a, b) ((a)&&(b)?iLogTable[(logTable[(a)]+logTable[(b)])%0xff]:0)
 #define GET(M,X,Y) ((M)[((Y) << 2) + (X)])
 
-const uint size = 4*4*sizeof(uint);
+//const uint size = 4*4*sizeof(uint);
 
 //Substitui o estado pelas entradas da S_BOX
 __global__ void SubBytes(uint *estado) {
@@ -30,70 +31,77 @@ __global__ void InvShiftRows(uint *estado) {
 	uint row  = threadIdx.x;
 	uint i, tmp[4];
 
-	for(i=1; i<4; i++)
-		tmp[i] = estado[row - 4*(i+row) % 16];
-	for(i=1; i<4; i++)
-		estado[row - 4*i] = tmp[i];
+	for(i=0; i<4; i++)
+		tmp[i] = estado[row + 4*(i-row) % 16];
+	for(i=0; i<4; i++)
+		estado[row + 4*i] = tmp[i];
 }
 
 
 __global__ void MixColumns(uint *estado) {
 	uint base = threadIdx.x << 2;
-	uint t, Tmp, Tm;
+	uint t[4];
+	
+	t[0] = aes_mul(0x02, estado[base]) ^ aes_mul(0x03, estado[base+1]) ^ estado[base+2] ^ estado[base+3];
+	t[1] = estado[base] ^ aes_mul(0x02, estado[base+1]) ^ aes_mul(0x03, estado[base+2]) ^ estado[base+3];
+	t[2] = estado[base] ^ estado[base+1] ^ aes_mul(0x02, estado[base+2]) ^ aes_mul(0x03, estado[base+3]);
+	t[3] = aes_mul(0x03, estado[base]) ^ estado[base+1] ^ estado[base+2] ^ aes_mul(0x02, estado[base+3]);
 
-	t   = estado[base];
-	Tmp = estado[base] ^ estado[base + 1] ^ estado[base + 2] ^ estado[base + 3];
-	Tm  = estado[base    ] ^ estado[base + 1]; Tm = xtime(Tm) & 0xff; estado[base    ] ^= Tm ^ Tmp;
-	Tm  = estado[base + 1] ^ estado[base + 2]; Tm = xtime(Tm) & 0xff; estado[base + 1] ^= Tm ^ Tmp;
-	Tm  = estado[base + 2] ^ estado[base + 3]; Tm = xtime(Tm) & 0xff; estado[base + 2] ^= Tm ^ Tmp;
-	Tm  = estado[base + 3] ^ t;               Tm = xtime(Tm) & 0xff; estado[base + 3] ^= Tm ^ Tmp;
+	estado[base] = t[0];
+	estado[base+1] = t[1];
+	estado[base+2] = t[2];
+	estado[base+3] = t[3];	
 }
+
 //TODO
 __global__ void InvMixColumns(uint *estado) {
 	uint base = threadIdx.x << 2;
-	uint t, Tmp, Tm;
+	uint t[4];
+	
+	t[0] = aes_mul(0x0e, estado[base]) ^ aes_mul(0x0b, estado[base+1]) ^ aes_mul(0x0d, estado[base+2]) ^ aes_mul(0x09, estado[base+3]);
+	t[1] = aes_mul(0x09, estado[base]) ^ aes_mul(0x0e, estado[base+1]) ^ aes_mul(0x0b, estado[base+2]) ^ aes_mul(0x0d, estado[base+3]);
+	t[2] = aes_mul(0x0d, estado[base]) ^ aes_mul(0x09, estado[base+1]) ^ aes_mul(0x0e, estado[base+2]) ^ aes_mul(0x0b, estado[base+3]);
+	t[3] = aes_mul(0x0b, estado[base]) ^ aes_mul(0x0d, estado[base+1]) ^ aes_mul(0x09, estado[base+2]) ^ aes_mul(0x0e, estado[base+3]);
 
-	t   = estado[base];
-	Tmp = estado[base] ^ estado[base + 1] ^ estado[base + 2] ^ estado[base + 3];
-	Tm  = estado[base    ] ^ estado[base + 1]; Tm = xtime(Tm) & 0xff; estado[base    ] ^= Tm ^ Tmp;
-	Tm  = estado[base + 1] ^ estado[base + 2]; Tm = xtime(Tm) & 0xff; estado[base + 1] ^= Tm ^ Tmp;
-	Tm  = estado[base + 2] ^ estado[base + 3]; Tm = xtime(Tm) & 0xff; estado[base + 2] ^= Tm ^ Tmp;
-	Tm  = estado[base + 3] ^ t;               Tm = xtime(Tm) & 0xff; estado[base + 3] ^= Tm ^ Tmp;
+	estado[base] = t[0];
+	estado[base+1] = t[1];
+	estado[base+2] = t[2];
+	estado[base+3] = t[3];	
 }
 
 __global__ void AddRoundKey(uint *estado, uint *chave) {
 	estado[threadIdx.x] ^= chave[threadIdx.x];
 }
 
-void invAes(uint *cp, uint cW, uint Nr) {
+void invAes(uint *cp, uint *cW, uint Nr, uint n) {
 	
 	register uint i;
-	AddRoundKey<<<1,16>>>(cp);
-	for(i=Nr; i>=1; i--) {
-		InvShiftRows<<<1,4>>>(cp);
-		InvSubBytes<<<1,16>>>(cp);
-		AddRoundKey<<<1,16>>>(cp, cW+(i << 4));
-		InvMixColumns<<<1,4>>>(cp);
+	AddRoundKey<<<1,16*n>>>(cp, cW+(Nr << 4));
+	for(i=Nr; i>1; i--) {
+		InvShiftRows<<<1,4*n>>>(cp);
+		InvSubBytes<<<1,16*n>>>(cp);
+		AddRoundKey<<<1,16*n>>>(cp, cW+((i-1) << 4));
+		InvMixColumns<<<1,4*n>>>(cp);
 	}
-	InvShiftRows<<<1,4>>>(cp);
-	InvSubBytes<<<1,16>>>(cp);
-	AddRoundKey<<<1,16>>>(cp, cW+(i << 4));
+	InvShiftRows<<<1,4*n>>>(cp);
+	InvSubBytes<<<1,16*n>>>(cp);
+	AddRoundKey<<<1,16*n>>>(cp, cW);
 	
 }
 
-void aes(uint *cp, uint *cW, uint Nr) {
+void aes(uint *cp, uint *cW, uint Nr, uint n) {
 
 	register uint i;
-	AddRoundKey<<<1,16>>>(cp, cW);
+	AddRoundKey<<<1,16*n>>>(cp, cW);
 	for(i=1; i<Nr; i++) {
-		SubBytes<<<1,16>>>(cp);
-		ShiftRows<<<1,4>>>(cp);
-		MixColumns<<<1,4>>>(cp);
-		AddRoundKey<<<1,16>>>(cp, cW+(i << 4));
+		SubBytes<<<1,16*n>>>(cp);
+		ShiftRows<<<1,4*n>>>(cp);
+		MixColumns<<<1,4*n>>>(cp);
+		AddRoundKey<<<1,16*n>>>(cp, cW+(i << 4));
 	}
-	SubBytes<<<1,16>>>(cp);
-	ShiftRows<<<1,4>>>(cp);
-	AddRoundKey<<<1,16>>>(cp, cW+(i << 4));
+	SubBytes<<<1,16*n>>>(cp);
+	ShiftRows<<<1,4*n>>>(cp);
+	AddRoundKey<<<1,16*n>>>(cp, cW+(i << 4));
 }
 
 void ExpandKeys(uint *key, uint keysize, uint *W, uint Nk, uint Nr) {
@@ -132,10 +140,12 @@ void ExpandKeys(uint *key, uint keysize, uint *W, uint Nk, uint Nr) {
 	}
 }
 
-void encriptar(uint *tp, uint *chave, uint *tc, uint tamanhoChave) {
+void encriptar(uint *tp, uint *chave, uint *tc, uint tamanhoChave, uint offset) {
 	uint *cp, *W, *cW, Nk, Nr;
 	Nk = tamanhoChave >> 5;
 	Nr = Nk + 6;
+	printf("\n %d \n", offset);
+	uint size = 4*4*offset*sizeof(uint);
 	uint s = ((Nr+1) * sizeof(uint)) << 4;
 	W = (uint *)malloc(s);
 	cudaMalloc((void**)&cW, s);
@@ -143,12 +153,35 @@ void encriptar(uint *tp, uint *chave, uint *tc, uint tamanhoChave) {
 	cudaMemcpy(cW, W, s, cudaMemcpyHostToDevice);
 	cudaMalloc((void**)&cp, size);
 	cudaMemcpy(cp, tp, size, cudaMemcpyHostToDevice);
-	aes(cp, cW, Nr);
+	aes(cp, cW, Nr, offset);
 	tc = (uint *)malloc(16*sizeof(uint));
 	cudaMemcpy(tc, cp, size, cudaMemcpyDeviceToHost);
 	for(register uint i=0; i<(size/sizeof(uint)); i++) {
 		printf("%02X", tc[i]);
 	}
+	printf("\n");
+}
+
+void decriptar(uint *tc, uint *chave, uint *tp, uint tamanhoChave, uint offset) {
+	uint *cp, *W, *cW, Nk, Nr;
+	Nk = tamanhoChave >> 5;
+	Nr = Nk + 6;
+	printf("\n %d \n", offset);
+	uint size = 4*4*offset*sizeof(uint);
+	uint s = ((Nr+1) * sizeof(uint)) << 4;
+	W = (uint *)malloc(s);
+	cudaMalloc((void**)&cW, s);
+	ExpandKeys(chave, tamanhoChave, W, Nk, Nr);
+	cudaMemcpy(cW, W, s, cudaMemcpyHostToDevice);
+	cudaMalloc((void**)&cp, size);
+	cudaMemcpy(cp, tc, size, cudaMemcpyHostToDevice);
+	invAes(cp, cW, Nr, offset);
+	tp = (uint *)malloc(16*sizeof(uint));
+	cudaMemcpy(tp, cp, size, cudaMemcpyDeviceToHost);
+	for(register uint i=0; i<(size/sizeof(uint)); i++) {
+		printf("%02X", tp[i]);
+	}
+	printf("\n");
 }
 
 //Transforma a entrada em um array de char
@@ -177,7 +210,7 @@ int main(int argc, char **argv){
                 printf("Número de parâmetros errados\nUse: aes enc CHAVE TEXTO para encriptar\n     aes dec CHAVE TEXTO para decriptar");
 		return 1;
         }
-        uint *chave, *out, *in;
+        uint *chave, *out =0, *in, offset;
         uint tamanhoChave = stringToByteArray(argv[2], &chave);
         uint tamanhoIn  = stringToByteArray(argv[3], &in);
 
@@ -187,16 +220,18 @@ int main(int argc, char **argv){
         }
 
         if(tamanhoIn % 16 != 0) {
-                //TODO Fazer algo para completar o tamanho dos blocos
+                printf("Tamanho de bloco inválido\n Deve ser múltiplo de 16");
                 return 1;
         }
+	
+	offset = tamanhoIn / 16;
 
         if (!strcmp(argv[1], "enc")) {
 		//Chama encriptar com a entrada a chave a saída e o tamanho da chave em bits
-                encriptar(in, chave, out, tamanhoChave << 3);
+                encriptar(in, chave, out, tamanhoChave << 3, offset);
         } else
                 if (!strcmp(argv[1], "dec")) {
-                        //decriptar(in, chave, out, tamanhoChave << 3);
+                        decriptar(in, chave, out, tamanhoChave << 3, offset);
                 } else
                         printf("Parâmetro inválido\n Use enc para encriptar e dec para decriptar\n");
         
