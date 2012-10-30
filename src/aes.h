@@ -1,16 +1,13 @@
 #include <stdint.h>
 
-void aes_cuda(uint8_t *in, uint8_t *chave, uint8_t *out, uint8_t tamanhoChave, uint8_t offset, uint8_t acao); 
+//void aes_cuda(uint8_t *in, uint8_t *chave, uint8_t *out, uint8_t tamanhoChave, uint64_t offset, uint8_t acao); 
 void Caes(uint8_t *cp, uint8_t *cW, uint8_t Nr);
 void CinvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr);
 void aes(uint8_t *cp, uint8_t *cW, uint8_t Nr);
 void invAes(uint8_t *cp, uint8_t *cW, uint8_t Nr);
 void ExpandKeys(uint8_t *key, uint8_t keysize, uint8_t *W, uint8_t Nk, uint8_t Nr);
-void printHexArray(uint8_t *array, uint8_t size);
+void printHexArray(uint8_t *array, uint64_t size);
 uint8_t stringToByteArray(char *str, uint8_t *array[]);
-
-//typedef unsigned char byte;
-typedef unsigned long  ulong;
 
 __global__ void CSubBytes(uint8_t *estado);
 __global__ void CShiftRows(uint8_t *estado);
