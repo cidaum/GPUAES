@@ -11,10 +11,8 @@
 //const uint8_t size = 4*4*sizeof(uint8_t);
 
 //Substitui o estado pelas entradas da S_BOX
-__global__ void CSubBytes(uint8_t *estado, int passos, uint64_t offset) {
-	for(register int j=0; j<passos; j++){
-		estado[(blockIdx.x*blockDim.x)+(j*offset)+threadIdx.x] = Csbox[estado[(blockIdx.x*blockDim.x)+(j*offset)+threadIdx.x]];
-	}
+__global__ void CSubBytes(uint8_t *estado) {
+	estado[(blockIdx.x*blockDim.x)+threadIdx.x] = Csbox[estado[(blockIdx.x*blockDim.x)+threadIdx.x]];
 }
 
 void SubBytes(uint8_t *estado, uint64_t offset) {
@@ -25,10 +23,8 @@ void SubBytes(uint8_t *estado, uint64_t offset) {
 	}
 }
 
-__global__ void CInvSubBytes(uint8_t *estado, int passos, uint64_t offset) {
-	for(register int j=0; j<passos; j++) {
-		estado[(blockIdx.x*blockDim.x)+(j*offset)+threadIdx.x] = CInvSbox[estado[(blockIdx.x*blockDim.x)+(j*offset)+threadIdx.x]];
-	}	
+__global__ void CInvSubBytes(uint8_t *estado) {
+		estado[(blockIdx.x*blockDim.x)+threadIdx.x] = CInvSbox[estado[(blockIdx.x*blockDim.x)+threadIdx.x]];
 }
 
 void InvSubBytes(uint8_t *estado, uint64_t offset) {
@@ -39,18 +35,16 @@ void InvSubBytes(uint8_t *estado, uint64_t offset) {
 	}
 }
 
-__global__ void CShiftRows(uint8_t *estado, int passos, uint64_t offset) {
-	for(register int j=0; j<passos; j++) {
-		uint64_t idx  = (blockIdx.x*blockDim.x)+(j*offset)+threadIdx.x;
-		int row = idx % 4;
-		uint8_t t;
-	
-		t = estado[((idx + 4*row) % 16) + ((idx >> 4 ) << 4)];
-	
-		__syncthreads();
+__global__ void CShiftRows(uint8_t *estado) {
+	uint64_t idx  = (blockIdx.x*blockDim.x)+threadIdx.x;
+	int row = idx % 4;
+	uint8_t t;
 
-		estado[idx] = t;
-	}
+	t = estado[((idx + 4*row) % 16) + ((idx >> 4 ) << 4)];
+
+	__syncthreads();
+
+	estado[idx] = t;
 }
 
 void ShiftRows(uint8_t *estado, uint64_t offset) {
@@ -68,18 +62,16 @@ void ShiftRows(uint8_t *estado, uint64_t offset) {
 	}
 }
 
-__global__ void CInvShiftRows(uint8_t *estado, int passos, uint64_t offset) {
-	for(register int j=0; j<offset; j++) {
-		uint64_t idx  = (blockIdx.x*blockDim.x)+(j*offset)+threadIdx.x;
-		int row = idx % 4;
-		uint8_t t;
-	
-		t = estado[((idx - 4*row) % 16) + ((idx >> 4 ) << 4)];
-	
-		__syncthreads();
+__global__ void CInvShiftRows(uint8_t *estado) {
+	uint64_t idx  = (blockIdx.x*blockDim.x)+threadIdx.x;
+	int row = idx % 4;
+	uint8_t t;
 
-		estado[idx] = t;
-	}
+	t = estado[((idx - 4*row) % 16) + ((idx >> 4 ) << 4)];
+
+	__syncthreads();
+
+	estado[idx] = t;
 }
 
 
@@ -98,21 +90,19 @@ void InvShiftRows(uint8_t *estado, uint64_t offset) {
 	}
 }
 
-__global__ void CMixColumns(uint8_t *estado, int passos, uint64_t offset) {
-	for(register int j=0; j<offset; j++) {
-		uint64_t idx = (blockIdx.x*blockDim.x)+(j*offset)+threadIdx.x;
-		uint8_t base = idx % 4;
-		uint8_t t;
+__global__ void CMixColumns(uint8_t *estado) {
+	uint64_t idx = (blockIdx.x*blockDim.x)+threadIdx.x;
+	uint8_t base = idx % 4;
+	uint8_t t;
 
-		if(base == 0) t = caes_mul(0x02, estado[idx]) ^ caes_mul(0x03, estado[idx+1]) ^ estado[idx+2] ^ estado[idx+3];
-		if(base == 1) t = estado[idx-1] ^ caes_mul(0x02, estado[idx]) ^ caes_mul(0x03, estado[idx+1]) ^ estado[idx+2];
-		if(base == 2) t = estado[idx-2] ^ estado[idx-1] ^ caes_mul(0x02, estado[idx]) ^ caes_mul(0x03, estado[idx+1]);
-		if(base == 3) t = caes_mul(0x03, estado[idx-3]) ^ estado[idx-2] ^ estado[idx-1] ^ caes_mul(0x02, estado[idx]);
-	
-		__syncthreads();
+	if(base == 0) t = caes_mul(0x02, estado[idx]) ^ caes_mul(0x03, estado[idx+1]) ^ estado[idx+2] ^ estado[idx+3];
+	if(base == 1) t = estado[idx-1] ^ caes_mul(0x02, estado[idx]) ^ caes_mul(0x03, estado[idx+1]) ^ estado[idx+2];
+	if(base == 2) t = estado[idx-2] ^ estado[idx-1] ^ caes_mul(0x02, estado[idx]) ^ caes_mul(0x03, estado[idx+1]);
+	if(base == 3) t = caes_mul(0x03, estado[idx-3]) ^ estado[idx-2] ^ estado[idx-1] ^ caes_mul(0x02, estado[idx]);
 
-		estado[idx] = t;
-	}
+	__syncthreads();
+
+	estado[idx] = t;
 }
 
 void MixColumns(uint8_t *estado, uint64_t offset) {
@@ -133,21 +123,19 @@ void MixColumns(uint8_t *estado, uint64_t offset) {
 	}
 }
 
-__global__ void CInvMixColumns(uint8_t *estado, int passos, uint64_t offset) {
-	for(register int j=0; j<offset; j++) {
-		uint64_t idx = (blockIdx.x*blockDim.x)+(j*offset)+threadIdx.x;
-		uint8_t base = idx % 4;
-		uint8_t t;
+__global__ void CInvMixColumns(uint8_t *estado) {
+	uint64_t idx = (blockIdx.x*blockDim.x)+threadIdx.x;
+	uint8_t base = idx % 4;
+	uint8_t t;
 
-		if(base == 0) t = caes_mul(0x0e, estado[idx]) ^ caes_mul(0x0b, estado[idx+1]) ^ caes_mul(0x0d, estado[idx+2]) ^ caes_mul(0x09, estado[idx+3]);
-		if(base == 1) t = caes_mul(0x09, estado[idx-1]) ^ caes_mul(0x0e, estado[idx]) ^ caes_mul(0x0b, estado[idx+1]) ^ caes_mul(0x0d, estado[idx+2]);
-		if(base == 2) t = caes_mul(0x0d, estado[idx-2]) ^ caes_mul(0x09, estado[idx-1]) ^ caes_mul(0x0e, estado[idx]) ^ caes_mul(0x0b, estado[idx+1]);
-		if(base == 3) t = caes_mul(0x0b, estado[idx-3]) ^ caes_mul(0x0d, estado[idx-2]) ^ caes_mul(0x09, estado[idx-1]) ^ caes_mul(0x0e, estado[idx]);
+	if(base == 0) t = caes_mul(0x0e, estado[idx]) ^ caes_mul(0x0b, estado[idx+1]) ^ caes_mul(0x0d, estado[idx+2]) ^ caes_mul(0x09, estado[idx+3]);
+	if(base == 1) t = caes_mul(0x09, estado[idx-1]) ^ caes_mul(0x0e, estado[idx]) ^ caes_mul(0x0b, estado[idx+1]) ^ caes_mul(0x0d, estado[idx+2]);
+	if(base == 2) t = caes_mul(0x0d, estado[idx-2]) ^ caes_mul(0x09, estado[idx-1]) ^ caes_mul(0x0e, estado[idx]) ^ caes_mul(0x0b, estado[idx+1]);
+	if(base == 3) t = caes_mul(0x0b, estado[idx-3]) ^ caes_mul(0x0d, estado[idx-2]) ^ caes_mul(0x09, estado[idx-1]) ^ caes_mul(0x0e, estado[idx]);
 	
-		__syncthreads();
+	__syncthreads();
 
-		estado[idx] = t;
-	}
+	estado[idx] = t;
 }
 
 void InvMixColumns(uint8_t *estado, uint64_t offset) {
@@ -168,10 +156,8 @@ void InvMixColumns(uint8_t *estado, uint64_t offset) {
 	}
 }
 
-__global__ void CAddRoundKey(uint8_t *estado, uint8_t *chave, int passos, uint64_t offset) {
-	for(register int j=0; j<offset; j++) {
-		estado[(blockIdx.x*blockDim.x)+(j*offset)+threadIdx.x] ^= chave[((blockIdx.x*blockDim.x)+(j*offset)+threadIdx.x) % 16];
-	}
+__global__ void CAddRoundKey(uint8_t *estado, uint8_t *chave) {
+		estado[(blockIdx.x*blockDim.x)+threadIdx.x] ^= chave[(blockIdx.x*blockDim.x)+threadIdx.x % 16];
 }
 
 void AddRoundKey(uint8_t *estado, uint8_t *chave, uint64_t offset) {
@@ -184,115 +170,109 @@ void AddRoundKey(uint8_t *estado, uint8_t *chave, uint64_t offset) {
 
 void cinvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr, uint32_t numeroBlocos, uint16_t numeroThreads, uint64_t n) {
 	
-	uint64_t passos, total;
-	total = numeroBlocos*numeroThreads;
-	passos = (sizeof(uint8_t)*16*n)/total;
 	register uint8_t i;
-	register uint8_t j;
-  	uint8_t tmp[16*n];
-	cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
-  	printf("0 str ");
-  	for(j=0; j < 16*n; j++) {
-  		printf("%02X", tmp[j]);
-  	}
-  	printf("\n");
-	CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW+(Nr << 4), passos, total);
-  	cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
-  	printf("0 add ");
-  	for(j=0; j < 16*n; j++) {
-  		printf("%02X", tmp[j]);
-  	}
-  	printf("\n");
+//	register uint64_t j;
+//  	uint8_t tmp[16*n];
+//	cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
+//  	printf("0 str ");
+//  	for(j=0; j < 16*n; j++) {
+//  		printf("%02X", tmp[j]);
+//  	}
+//  	printf("\n");
+	CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW+(Nr << 4));
+//  	cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
+//  	printf("0 add ");
+//  	for(j=0; j < 16*n; j++) {
+//  		printf("%02X", tmp[j]);
+//  	}
+//  	printf("\n");
 	for(i=Nr; i>1; i--) {
-		CInvShiftRows<<<numeroBlocos,numeroThreads>>>(cp, passos, total);
-  		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
-  		printf("%d shi ",i);
-  		for(j=0; j < 16*n; j++) {
-  			printf("%02X", tmp[j]);
-  		}
-  		printf("\n");
-		CInvSubBytes<<<numeroBlocos,numeroThreads>>>(cp, passos, total);
-  		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
-  		printf("%d sub ",i);
- 		for(j=0; j < 16*n; j++) {
-  			printf("%02X", tmp[j]);
-  		}
-  		printf("\n");
-		CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW+((i-1) << 4), passos, total);
-  		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
- 		printf("%d add ",i);
-  		for(j=0; j < 16*n; j++) {
-  			printf("%02X", tmp[j]);
-  		}
-		printf("\n");
-		CInvMixColumns<<<numeroBlocos,numeroThreads>>>(cp, passos, total);
-  		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
-  		printf("%d mix ",i);
-  		for(j=0; j < 16*n; j++) {
-  			printf("%02X", tmp[j]);
-  		}
-  		printf("\n");
+		CInvShiftRows<<<numeroBlocos,numeroThreads>>>(cp);
+//  		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
+//  		printf("%d shi ",i);
+//  		for(j=0; j < 16*n; j++) {
+//  			printf("%02X", tmp[j]);
+//  		}
+//  		printf("\n");
+		CInvSubBytes<<<numeroBlocos,numeroThreads>>>(cp);
+//  		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
+//  		printf("%d sub ",i);
+// 		for(j=0; j < 16*n; j++) {
+//  			printf("%02X", tmp[j]);
+//  		}
+//  		printf("\n");
+		CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW+((i-1) << 4));
+//  		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
+// 		printf("%d add ",i);
+//  		for(j=0; j < 16*n; j++) {
+//  			printf("%02X", tmp[j]);
+//  		}
+//		printf("\n");
+		CInvMixColumns<<<numeroBlocos,numeroThreads>>>(cp);
+//  		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
+//  		printf("%d mix ",i);
+//  		for(j=0; j < 16*n; j++) {
+//  			printf("%02X", tmp[j]);
+//  		}
+//  		printf("\n");
 	}
-	CInvShiftRows<<<numeroBlocos,numeroThreads>>>(cp, passos, total);
-	CInvSubBytes<<<numeroBlocos,numeroThreads>>>(cp, passos, total);
-	CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW, passos, total);
+	CInvShiftRows<<<numeroBlocos,numeroThreads>>>(cp);
+	CInvSubBytes<<<numeroBlocos,numeroThreads>>>(cp);
+	CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW);
 	
 }
 
 void caes(uint8_t *cp, uint8_t *cW, uint8_t Nr, uint32_t numeroBlocos, uint16_t numeroThreads, uint64_t n) {
 
-	uint64_t passos, total;
-	total = numeroBlocos*numeroThreads;
-	passos = (sizeof(uint8_t)*16*n)/total;
 	register uint8_t i;
-	register uint8_t j;
-	uint8_t tmp[16*n];
-	CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW, passos, total);
-	cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
-	printf("0 add ");
-	for(j=0; j < 16*n; j++) {
-		printf("%02X", tmp[j]);
-	}
-	printf("\n");
+//	register uint64_t j;
+//	uint8_t tmp[16*n];
+	CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW);
+//	cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
+//	printf("0 add ");
+//	for(j=0; j < 16*n; j++) {
+//		printf("%02X", tmp[j]);
+//	}
+//	printf("\n");
 	for(i=1; i<Nr; i++) {
-		CSubBytes<<<numeroBlocos,numeroThreads>>>(cp, passos, total);
-		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
-		printf("%d sub ",i);
-		for(j=0; j < 16*n; j++) {
-			printf("%02X", tmp[j]);
-		}
-		printf("\n");
-		CShiftRows<<<numeroBlocos,numeroThreads>>>(cp, passos, total);
-		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
-		printf("%d shi ",i);
-		for(j=0; j < 16*n; j++) {
-			printf("%02X", tmp[j]);
-		}
-		printf("\n");
-		CMixColumns<<<numeroBlocos,numeroThreads>>>(cp, passos, total);
-		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
-		printf("%d mix ",i);
-		for(j=0; j < 16*n; j++) {
-			printf("%02X", tmp[j]);
-		}
-		printf("\n");
-		CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW+(i << 4), passos, total);
-		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
-		printf("%d add ",i);
-		for(j=0; j < 16*n; j++) {
-			printf("%02X", tmp[j]);
-		}
-		printf("\n");
+		CSubBytes<<<numeroBlocos,numeroThreads>>>(cp);
+//		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
+//		printf("%d sub ",i);
+//		for(j=0; j < 16*n; j++) {
+//			printf("%02X", tmp[j]);
+//		}
+//		printf("\n");
+		CShiftRows<<<numeroBlocos,numeroThreads>>>(cp);
+//		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
+//		printf("%d shi ",i);
+//		for(j=0; j < 16*n; j++) {
+//			printf("%02X", tmp[j]);
+//		}
+//		printf("\n");
+		CMixColumns<<<numeroBlocos,numeroThreads>>>(cp);
+//		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
+//		printf("%d mix ",i);
+//		for(j=0; j < 16*n; j++) {
+//			printf("%02X", tmp[j]);
+//		}
+//		printf("\n");
+		CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW+(i << 4));
+//		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
+//		printf("%d add ",i);
+//		for(j=0; j < 16*n; j++) {
+//			printf("%02X", tmp[j]);
+//		}
+//		printf("\n");
 	}
-	CSubBytes<<<numeroBlocos,numeroThreads>>>(cp, passos, total);
-	CShiftRows<<<numeroBlocos,numeroThreads>>>(cp, passos, total);
-	CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW+(i << 4), passos, total);
+	CSubBytes<<<numeroBlocos,numeroThreads>>>(cp);
+	CShiftRows<<<numeroBlocos,numeroThreads>>>(cp);
+	CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW+(i << 4));
 }
 
 void aes(uint8_t *tp, uint8_t *W, uint8_t Nr, uint64_t n) {
 
 	register uint8_t i;
-//	register uint8_t k;
+//	uint64_t k;
 //	printf("-1 add ");
 //	for(k=0; k < 16*n; k++) {
 //		printf("%02X", tp[k]);
@@ -343,15 +323,15 @@ void aes(uint8_t *tp, uint8_t *W, uint8_t Nr, uint64_t n) {
 void invAes(uint8_t *tp, uint8_t *W, uint8_t Nr, uint64_t n) {
 
 	register uint8_t i;
-//	register uint8_t k;
+//	uint64_t k;
 //	printf("-1 add ");
-//  	for(k=0; k < 16*n; k++) {
+//	for(k=0; k < 16*n; k++) {
 //  		printf("%02X", tp[k]);
-//  	}
+//	}
 //  	printf("\n");
       	AddRoundKey(tp, W+(Nr << 4), n);
 //  	printf("0 add ");
-//  	for(k=0; k < 16*n; k++) {
+//	for(k=0; k < 16*n; k++) {
 //  		printf("%02X", tp[k]);
 //  	}
 //  	printf("\n");
@@ -362,15 +342,15 @@ void invAes(uint8_t *tp, uint8_t *W, uint8_t Nr, uint64_t n) {
 //  			printf("%02X", tp[k]);
 //  		}
 //  		printf("\n");
-      		InvSubBytes(tp, n);
+    		InvSubBytes(tp, n);
 //  		printf("%d sub ",i);
 //  		for(k=0; k < 16*n; k++) {
 // 			printf("%02X", tp[k]);
-//  		}
-//  		printf("\n");
+//		}
+//		printf("\n");
       		AddRoundKey(tp, W+((i-1) << 4), n);
-//  		printf("%d add ",i);
-//  		for(k=0; k < 16*n; k++) {
+//		printf("%d add ",i);
+//		for(k=0; k < 16*n; k++) {
 //			printf("%02X", tp[k]);
 //  		}
 //  		printf("\n");
@@ -513,8 +493,8 @@ int main(int argc, char **argv){
 		return 1;
         }
 
-	uint32_t numeroBlocos = atoi(argv[1]);
-	uint16_t numeroThreads = atoi(argv[2]);
+	uint64_t numeroBlocos = atoi(argv[1]);
+	int numeroThreads = atoi(argv[2]);
 	uint8_t tamanhoChave = atoi(argv[3]);
 	uint64_t tamanhoIn = atoi(argv[4]);
 	
