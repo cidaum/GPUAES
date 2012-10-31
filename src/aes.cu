@@ -12,164 +12,163 @@
 
 //Substitui o estado pelas entradas da S_BOX
 __global__ void CSubBytes(uint8_t *estado) {
-	estado[threadIdx.x] = Csbox[estado[threadIdx.x]];
+	estado[(blockIdx.x*blockDim.x)+threadIdx.x] = Csbox[estado[(blockIdx.x*blockDim.x)+threadIdx.x]];
 }
 
 void SubBytes(uint8_t *estado, uint64_t offset) {
-	for(register int i=0; i<16; i++){
-		estado[i+(15*offset)] = Sbox[estado[i+(15*offset)]];
+	for(uint64_t j=0; j<offset; j++) {
+		for(register int i=0; i<16; i++){
+			estado[i+(16*j)] = Sbox[estado[i+(16*j)]];
+		}
 	}
 }
 
 __global__ void CInvSubBytes(uint8_t *estado) {
-	estado[threadIdx.x] = CInvSbox[estado[threadIdx.x]];
+	estado[(blockIdx.x*blockDim.x)+threadIdx.x] = CInvSbox[estado[(blockIdx.x*blockDim.x)+threadIdx.x]];
 }
 
 void InvSubBytes(uint8_t *estado, uint64_t offset) {
-	for(register int i=0; i<16; i++){
-		estado[i+(15*offset)] = InvSbox[estado[i+(15*offset)]];
+	for(uint64_t j=0; j<offset; j++) {
+		for(register int i=0; i<16; i++){
+			estado[i+(16*j)]= InvSbox[estado[i+(16*j)]];
+		}
 	}
 }
 
 __global__ void CShiftRows(uint8_t *estado) {
-	uint64_t row  = threadIdx.x;
-	uint8_t tmp[4];
+	uint64_t idx  = (blockIdx.x*blockDim.x)+threadIdx.x;
+	int row = idx % 4;
+	uint8_t t;
+	
+	t = estado[((idx + 4*row) % 16) + ((idx >> 4 ) << 4)];
+	
+	__syncthreads();
 
-	tmp[0] = estado[row + 4*(0+row) % 16];
-	tmp[1] = estado[row + 4*(1+row) % 16];
-	tmp[2] = estado[row + 4*(2+row) % 16];
-	tmp[3] = estado[row + 4*(3+row) % 16];
+	estado[idx] = t;
 
-	estado[row + 4*0] = tmp[0];
-	estado[row + 4*1] = tmp[1];
-	estado[row + 4*2] = tmp[2];
-	estado[row + 4*3] = tmp[3];
 }
 
 void ShiftRows(uint8_t *estado, uint64_t offset) {
-	for(register int i=0; i<4; i++){
-		uint64_t row  = i+(15*offset);
-		uint8_t tmp[4];
-	
-		tmp[0] = estado[row + 4*(0+row) % 16];
-		tmp[1] = estado[row + 4*(1+row) % 16];
-		tmp[2] = estado[row + 4*(2+row) % 16];
-		tmp[3] = estado[row + 4*(3+row) % 16];
-
-		estado[row + 4*0] = tmp[0];
-		estado[row + 4*1] = tmp[1];
-		estado[row + 4*2] = tmp[2];
-		estado[row + 4*3] = tmp[3];
+	for(uint64_t j=0; j<offset; j++) {
+		uint8_t t[16];
+		for(register int i=0; i<16; i++){
+			uint64_t idx  = i+(16*j);
+			int row = idx % 4;
+			
+			t[i] = estado[((idx + 4*row) % 16) + ((idx >> 4) << 4)];
+		}
+		for(register int i=0; i<16; i++) {
+			estado[i+(16*j)] = t[i];
+		}
 	}
 }
 
 __global__ void CInvShiftRows(uint8_t *estado) {
-	uint64_t row  = threadIdx.x;
-	uint8_t tmp[4];
+	uint64_t idx  = (blockIdx.x*blockDim.x)+threadIdx.x;
+	int row = idx % 4;
+	uint8_t t;
+	
+	t = estado[((idx - 4*row) % 16) + ((idx >> 4 ) << 4)];
+	
+	__syncthreads();
 
-	tmp[0] = estado[row + 4*(0-row) % 16];
-	tmp[1] = estado[row + 4*(1-row) % 16];
-	tmp[2] = estado[row + 4*(2-row) % 16];
-	tmp[3] = estado[row + 4*(3-row) % 16];
-
-	estado[row + 4*0] = tmp[0];
-	estado[row + 4*1] = tmp[1];
-	estado[row + 4*2] = tmp[2];
-	estado[row + 4*3] = tmp[3];
+	estado[idx] = t;
 }
 
 
 void InvShiftRows(uint8_t *estado, uint64_t offset) {
-	for(register int i=0; i<4; i++){
-		uint64_t row  = i+(15*offset);
-		uint8_t tmp[4];
-	
-		tmp[0] = estado[row + 4*(0-row) % 16];
-		tmp[1] = estado[row + 4*(1-row) % 16];
-		tmp[2] = estado[row + 4*(2-row) % 16];
-		tmp[3] = estado[row + 4*(3-row) % 16];
-
-		estado[row + 4*0] = tmp[0];
-		estado[row + 4*1] = tmp[1];
-		estado[row + 4*2] = tmp[2];
-		estado[row + 4*3] = tmp[3];
+	for(uint64_t j=0; j<offset; j++) {
+		uint8_t t[16];
+		for(register int i=0; i<16; i++){
+			uint64_t idx  = i+(16*j);
+			int row = idx % 4;
+			
+			t[i] = estado[((idx - 4*row) % 16) + ((idx >> 4) << 4)];
+		}
+		for(register int i=0; i<16; i++) {
+			estado[i+(16*j)] = t[i];
+		}
 	}
 }
 __global__ void CMixColumns(uint8_t *estado) {
-	uint64_t base = threadIdx.x << 2;
-	uint8_t t[4];
-	
-	t[0] = caes_mul(0x02, estado[base]) ^ caes_mul(0x03, estado[base+1]) ^ estado[base+2] ^ estado[base+3];
-	t[1] = estado[base] ^ caes_mul(0x02, estado[base+1]) ^ caes_mul(0x03, estado[base+2]) ^ estado[base+3];
-	t[2] = estado[base] ^ estado[base+1] ^ caes_mul(0x02, estado[base+2]) ^ caes_mul(0x03, estado[base+3]);
-	t[3] = caes_mul(0x03, estado[base]) ^ estado[base+1] ^ estado[base+2] ^ caes_mul(0x02, estado[base+3]);
+	uint64_t idx = (blockIdx.x*blockDim.x)+threadIdx.x;
+	uint8_t base = idx % 4;
+	uint8_t t;
 
-	estado[base] = t[0];
-	estado[base+1] = t[1];
-	estado[base+2] = t[2];
-	estado[base+3] = t[3];	
+	if(base == 0) t = caes_mul(0x02, estado[idx]) ^ caes_mul(0x03, estado[idx+1]) ^ estado[idx+2] ^ estado[idx+3];
+	if(base == 1) t = estado[idx-1] ^ caes_mul(0x02, estado[idx]) ^ caes_mul(0x03, estado[idx+1]) ^ estado[idx+2];
+	if(base == 2) t = estado[idx-2] ^ estado[idx-1] ^ caes_mul(0x02, estado[idx]) ^ caes_mul(0x03, estado[idx+1]);
+	if(base == 3) t = caes_mul(0x03, estado[idx-3]) ^ estado[idx-2] ^ estado[idx-1] ^ caes_mul(0x02, estado[idx]);
+	
+	__syncthreads();
+
+	estado[idx] = t;
 }
 
 void MixColumns(uint8_t *estado, uint64_t offset) {
-	for(register int i=0; i<16; i++) {
-		uint64_t base = (i+(15*offset)) << 2;
-		uint8_t t[4];
+	for(uint64_t j=0; j<offset; j++) {
+		uint8_t t[16];
+		for(register int i=0; i<16; i++) {
+			uint64_t idx = (i+(16*j));
+			uint8_t base = idx % 4;
 	
-		t[0] = aes_mul(0x02, estado[base]) ^ aes_mul(0x03, estado[base+1]) ^ estado[base+2] ^ estado[base+3];
-		t[1] = estado[base] ^ aes_mul(0x02, estado[base+1]) ^ aes_mul(0x03, estado[base+2]) ^ estado[base+3];
-		t[2] = estado[base] ^ estado[base+1] ^ aes_mul(0x02, estado[base+2]) ^ aes_mul(0x03, estado[base+3]);
-		t[3] = aes_mul(0x03, estado[base]) ^ estado[base+1] ^ estado[base+2] ^ aes_mul(0x02, estado[base+3]);
-
-		estado[base] = t[0];
-		estado[base+1] = t[1];
-		estado[base+2] = t[2];
-		estado[base+3] = t[3];
-	}	
+			if(base == 0) t[i] = aes_mul(0x02, estado[idx]) ^ aes_mul(0x03, estado[idx+1]) ^ estado[idx+2] ^ estado[idx+3];
+			if(base == 1) t[i] = estado[idx-1] ^ aes_mul(0x02, estado[idx]) ^ aes_mul(0x03, estado[idx+1]) ^ estado[idx+2];
+			if(base == 2) t[i] = estado[idx-2] ^ estado[idx-1] ^ aes_mul(0x02, estado[idx]) ^ aes_mul(0x03, estado[idx+1]);
+			if(base == 3) t[i] = aes_mul(0x03, estado[idx-3]) ^ estado[idx-2] ^ estado[idx-1] ^ aes_mul(0x02, estado[idx]);
+		}
+		for(register int i=0; i<16; i++) {
+			estado[i+(16*j)] = t[i];
+		}
+	}
 }
 
 __global__ void CInvMixColumns(uint8_t *estado) {
-	uint64_t base = threadIdx.x << 2;
-	uint8_t t[4];
-	
-	t[0] = caes_mul(0x0e, estado[base]) ^ caes_mul(0x0b, estado[base+1]) ^ caes_mul(0x0d, estado[base+2]) ^ caes_mul(0x09, estado[base+3]);
-	t[1] = caes_mul(0x09, estado[base]) ^ caes_mul(0x0e, estado[base+1]) ^ caes_mul(0x0b, estado[base+2]) ^ caes_mul(0x0d, estado[base+3]);
-	t[2] = caes_mul(0x0d, estado[base]) ^ caes_mul(0x09, estado[base+1]) ^ caes_mul(0x0e, estado[base+2]) ^ caes_mul(0x0b, estado[base+3]);
-	t[3] = caes_mul(0x0b, estado[base]) ^ caes_mul(0x0d, estado[base+1]) ^ caes_mul(0x09, estado[base+2]) ^ caes_mul(0x0e, estado[base+3]);
+	uint64_t idx = (blockIdx.x*blockDim.x)+threadIdx.x;
+	uint8_t base = idx % 4;
+	uint8_t t;
 
-	estado[base] = t[0];
-	estado[base+1] = t[1];
-	estado[base+2] = t[2];
-	estado[base+3] = t[3];	
+	if(base == 0) t = caes_mul(0x0e, estado[idx]) ^ caes_mul(0x0b, estado[idx+1]) ^ caes_mul(0x0d, estado[idx+2]) ^ caes_mul(0x09, estado[idx+3]);
+	if(base == 1) t = caes_mul(0x09, estado[idx-1]) ^ caes_mul(0x0e, estado[idx]) ^ caes_mul(0x0b, estado[idx+1]) ^ caes_mul(0x0d, estado[idx+2]);
+	if(base == 2) t = caes_mul(0x0d, estado[idx-2]) ^ caes_mul(0x09, estado[idx-1]) ^ caes_mul(0x0e, estado[idx]) ^ caes_mul(0x0b, estado[idx+1]);
+	if(base == 3) t = caes_mul(0x0b, estado[idx-3]) ^ caes_mul(0x0d, estado[idx-2]) ^ caes_mul(0x09, estado[idx-1]) ^ caes_mul(0x0e, estado[idx]);
+	
+	__syncthreads();
+
+	estado[idx] = t;
 }
 
 void InvMixColumns(uint8_t *estado, uint64_t offset) {
-	for(uint8_t i=0; i<16; i++) {
-		uint64_t base = (i+(15*offset)) << 2;
-		uint8_t t[4];
-	
-		t[0] = aes_mul(0x0e, estado[base]) ^ aes_mul(0x0b, estado[base+1]) ^ aes_mul(0x0d, estado[base+2]) ^ aes_mul(0x09, estado[base+3]);
-		t[1] = aes_mul(0x09, estado[base]) ^ aes_mul(0x0e, estado[base+1]) ^ aes_mul(0x0b, estado[base+2]) ^ aes_mul(0x0d, estado[base+3]);
-		t[2] = aes_mul(0x0d, estado[base]) ^ aes_mul(0x09, estado[base+1]) ^ aes_mul(0x0e, estado[base+2]) ^ aes_mul(0x0b, estado[base+3]);
-		t[3] = aes_mul(0x0b, estado[base]) ^ aes_mul(0x0d, estado[base+1]) ^ aes_mul(0x09, estado[base+2]) ^ aes_mul(0x0e, estado[base+3]);
-
-		estado[base] = t[0];
-		estado[base+1] = t[1];
-		estado[base+2] = t[2];
-		estado[base+3] = t[3];
+	for(uint64_t j=0; j<offset; j++) {
+		uint8_t t[16];
+		for(register int i=0; i<16; i++) {
+			uint64_t idx = (i+(16*j));
+			uint8_t base = idx % 4;
+		
+			if(base == 0) t[i] = aes_mul(0x0e, estado[idx]) ^ aes_mul(0x0b, estado[idx+1]) ^ aes_mul(0x0d, estado[idx+2]) ^ aes_mul(0x09, estado[idx+3]);
+			if(base == 1) t[i] = aes_mul(0x09, estado[idx-1]) ^ aes_mul(0x0e, estado[idx]) ^ aes_mul(0x0b, estado[idx+1]) ^ aes_mul(0x0d, estado[idx+2]);
+			if(base == 2) t[i] = aes_mul(0x0d, estado[idx-2]) ^ aes_mul(0x09, estado[idx-1]) ^ aes_mul(0x0e, estado[idx]) ^ aes_mul(0x0b, estado[idx+1]);
+			if(base == 3) t[i] = aes_mul(0x0b, estado[idx-3]) ^ aes_mul(0x0d, estado[idx-2]) ^ aes_mul(0x09, estado[idx-1]) ^ aes_mul(0x0e, estado[idx]);
+		}
+		for(register int i=0; i<16; i++) {
+			estado[i+(16*j)] = t[i];
+		}
 	}
 }
 
 __global__ void CAddRoundKey(uint8_t *estado, uint8_t *chave) {
-	estado[threadIdx.x] ^= chave[threadIdx.x % 16];
+	estado[(blockIdx.x*blockDim.x)+threadIdx.x] ^= chave[((blockIdx.x*blockDim.x)+threadIdx.x) % 16];
 }
 
 void AddRoundKey(uint8_t *estado, uint8_t *chave, uint64_t offset) {
-	for(uint8_t i=0; i<16; i++) {
-		estado[i+(15*offset)] ^= chave[i];
+	for(uint64_t j=0; j<offset; j++) {	
+		for(uint8_t i=0; i<16; i++) {
+			estado[i+(16*j)] ^= chave[i];
+		}
 	}
 }
 
-void cinvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr, uint64_t n) {
+void cinvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr, uint32_t numeroBlocos, uint16_t numeroThreads, uint64_t n) {
 	
 	register uint8_t i;
 //  	register uint8_t j;
@@ -180,36 +179,36 @@ void cinvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr, uint64_t n) {
 //  		printf("%02X", tmp[j]);
 //  	}
 //  	printf("\n");
-        CAddRoundKey<<<1,16*n>>>(cp, cW+(Nr << 4));
+	CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW+(Nr << 4));
 //  	cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
 //  	printf("0 add ");
 //  	for(j=0; j < 16*n; j++) {
 //  		printf("%02X", tmp[j]);
 //  	}
 //  	printf("\n");
-        for(i=Nr; i>1; i--) {
-        	CInvShiftRows<<<1,16*n>>>(cp);
+	for(i=Nr; i>1; i--) {
+		CInvShiftRows<<<numeroBlocos,numeroThreads>>>(cp);
 //  		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
 //  		printf("%d shi ",i);
 //  		for(j=0; j < 16*n; j++) {
 //  			printf("%02X", tmp[j]);
 //  		}
 //  		printf("\n");
-        	CInvSubBytes<<<1,16*n>>>(cp);
+		CInvSubBytes<<<numeroBlocos,numeroThreads>>>(cp);
 //  		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
 //  		printf("%d sub ",i);
 // 		for(j=0; j < 16*n; j++) {
 //  			printf("%02X", tmp[j]);
 //  		}
 //  		printf("\n");
-        	CAddRoundKey<<<1,16*n>>>(cp, cW+((i-1) << 4));
+		CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW+((i-1) << 4));
 //  		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
 //  		printf("%d add ",i);
 //  		for(j=0; j < 16*n; j++) {
 //  			printf("%02X", tmp[j]);
 //  		}
-//  		printf("\n");
-        	CInvMixColumns<<<1,4*n>>>(cp);
+//		printf("\n");
+		CInvMixColumns<<<numeroBlocos,numeroThreads>>>(cp);
 //  		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
 //  		printf("%d mix ",i);
 //  		for(j=0; j < 16*n; j++) {
@@ -217,18 +216,18 @@ void cinvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr, uint64_t n) {
 //  		}
 //  		printf("\n");
 	}
-	CInvShiftRows<<<1,16*n>>>(cp);
-	CInvSubBytes<<<1,16*n>>>(cp);
-	CAddRoundKey<<<1,16*n>>>(cp, cW);
+	CInvShiftRows<<<numeroBlocos,numeroThreads>>>(cp);
+	CInvSubBytes<<<numeroBlocos,numeroThreads>>>(cp);
+	CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW);
 	
 }
 
-void caes(uint8_t *cp, uint8_t *cW, uint8_t Nr, uint64_t n) {
+void caes(uint8_t *cp, uint8_t *cW, uint8_t Nr, uint32_t numeroBlocos, uint16_t numeroThreads, uint64_t n) {
 
 	register uint8_t i;
 //	register uint8_t j;
 //	uint8_t tmp[16*n];
-	CAddRoundKey<<<1,16*n>>>(cp, cW);
+	CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW);
 //	cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
 //	printf("0 add ");
 //	for(j=0; j < 16*n; j++) {
@@ -236,28 +235,28 @@ void caes(uint8_t *cp, uint8_t *cW, uint8_t Nr, uint64_t n) {
 //	}
 //	printf("\n");
 	for(i=1; i<Nr; i++) {
-		CSubBytes<<<1,16*n>>>(cp);
+		CSubBytes<<<numeroBlocos,numeroThreads>>>(cp);
 //		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
 //		printf("%d sub ",i);
 //		for(j=0; j < 16*n; j++) {
 //			printf("%02X", tmp[j]);
 //		}
 //		printf("\n");
-		CShiftRows<<<1,16*n>>>(cp);
+		CShiftRows<<<numeroBlocos,numeroThreads>>>(cp);
 //		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
 //		printf("%d shi ",i);
 //		for(j=0; j < 16*n; j++) {
 //			printf("%02X", tmp[j]);
 //		}
 //		printf("\n");
-		CMixColumns<<<1,4*n>>>(cp);
+		CMixColumns<<<numeroBlocos,numeroThreads>>>(cp);
 //		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
 //		printf("%d mix ",i);
 //		for(j=0; j < 16*n; j++) {
 //			printf("%02X", tmp[j]);
 //		}
 //		printf("\n");
-		CAddRoundKey<<<1,16*n>>>(cp, cW+(i << 4));
+		CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW+(i << 4));
 //		cudaMemcpy(tmp, cp, sizeof(uint8_t)*16*n, cudaMemcpyDeviceToHost);
 //		printf("%d add ",i);
 //		for(j=0; j < 16*n; j++) {
@@ -265,116 +264,112 @@ void caes(uint8_t *cp, uint8_t *cW, uint8_t Nr, uint64_t n) {
 //		}
 //		printf("\n");
 	}
-	CSubBytes<<<1,16*n>>>(cp);
-	CShiftRows<<<1,16*n>>>(cp);
-	CAddRoundKey<<<1,16*n>>>(cp, cW+(i << 4));
+	CSubBytes<<<numeroBlocos,numeroThreads>>>(cp);
+	CShiftRows<<<numeroBlocos,numeroThreads>>>(cp);
+	CAddRoundKey<<<numeroBlocos,numeroThreads>>>(cp, cW+(i << 4));
 }
 
 void aes(uint8_t *tp, uint8_t *W, uint8_t Nr, uint64_t n) {
 
 	register uint8_t i;
-	uint64_t j;
-	for(j=0; j<n; j++){
-//		printf("-1 add ");
+//	register uint8_t k;
+//	printf("-1 add ");
+//	for(k=0; k < 16*n; k++) {
+//		printf("%02X", tp[k]);
+//	}
+//	printf("\n");
+	AddRoundKey(tp, W, n);
+//	printf("0 add ");
+//	for(k=0; k < 16*n; k++) {
+//		printf("%02X", tp[k]);
+//	}
+//	printf("\n");
+	for(i=1; i<Nr; i++){
+		SubBytes(tp, n);
+//		printf("%d sub ",i);
 //		for(k=0; k < 16*n; k++) {
 //			printf("%02X", tp[k]);
 //		}
 //		printf("\n");
-		AddRoundKey(tp, W, j);
-//		printf("0 add ");
+		ShiftRows(tp, n);
+//		printf("%d shi ",i);
 //		for(k=0; k < 16*n; k++) {
 //			printf("%02X", tp[k]);
 //		}
 //		printf("\n");
-		for(i=1; i<Nr; i++){
-			SubBytes(tp, j);
-//			printf("%d sub ",i);
-//			for(k=0; k < 16*n; k++) {
-//				printf("%02X", tp[k]);
-//			}
-//			printf("\n");
-			ShiftRows(tp, j);
-//			printf("%d shi ",i);
-//			for(k=0; k < 16*n; k++) {
-//				printf("%02X", tp[k]);
-//			}
-//			printf("\n");
-			MixColumns(tp, j%4);
-//			printf("%d mix ",i);
-//			for(k=0; k < 16*n; k++) {
-//				printf("%02X", tp[k]);
-//			}
-//			printf("\n");
-			AddRoundKey(tp, W+(i << 4), j);
-//			printf("%d add ",i);
-//			for(k=0; k < 16*n; k++) {
-//				printf("%02X", tp[k]);
-//			}
-//			printf("\n");
-		}
-		SubBytes(tp, j);
-		ShiftRows(tp, j);
-		AddRoundKey(tp, W+(i << 4), j);
+		MixColumns(tp, n);
+//		printf("%d mix ",i);
+//		for(k=0; k < 16*n; k++) {
+//			printf("%02X", tp[k]);
+//		}
+//		printf("\n");
+		AddRoundKey(tp, W+(i << 4), n);
 //		printf("%d add ",i);
 //		for(k=0; k < 16*n; k++) {
 //			printf("%02X", tp[k]);
 //		}
 //		printf("\n");
 	}
+	SubBytes(tp, n);
+	ShiftRows(tp, n);
+	AddRoundKey(tp, W+(i << 4), n);
+//	printf("%d add ",i);
+//	for(k=0; k < 16*n; k++) {
+//		printf("%02X", tp[k]);
+//	}
+//	printf("\n");
 }
 
 void invAes(uint8_t *tp, uint8_t *W, uint8_t Nr, uint64_t n) {
 
 	register uint8_t i;
-//	register uint8_t i;
-	uint64_t j;
-	for(j=0; j<n; j++){
-//		printf("-1 add ");
+//	register uint8_t k;
+//	printf("-1 add ");
+//  	for(k=0; k < 16*n; k++) {
+//  		printf("%02X", tp[k]);
+//  	}
+//  	printf("\n");
+      	AddRoundKey(tp, W+(Nr << 4), n);
+//  	printf("0 add ");
+//  	for(k=0; k < 16*n; k++) {
+//  		printf("%02X", tp[k]);
+//  	}
+//  	printf("\n");
+      	for(i=Nr; i>1; i--){
+      		InvShiftRows(tp, n);
+//  		printf("%d shi ",i);
 //  		for(k=0; k < 16*n; k++) {
 //  			printf("%02X", tp[k]);
 //  		}
 //  		printf("\n");
-        	AddRoundKey(tp, W+(Nr << 4), j);
-//  		printf("0 add ");
+      		InvSubBytes(tp, n);
+//  		printf("%d sub ",i);
 //  		for(k=0; k < 16*n; k++) {
-//  			printf("%02X", tp[k]);
+// 			printf("%02X", tp[k]);
 //  		}
 //  		printf("\n");
-        	for(i=Nr; i>1; i--){
-        		InvShiftRows(tp, j);
-//  			printf("%d shi ",i);
-//  			for(k=0; k < 16*n; k++) {
-//  				printf("%02X", tp[k]);
-//  			}
-//  			printf("\n");
-        		InvSubBytes(tp, j);
-//  			printf("%d sub ",i);
-//  			for(k=0; k < 16*n; k++) {
-// 				printf("%02X", tp[k]);
-//  			}
-//  			printf("\n");
-        		AddRoundKey(tp, W+((i-1) << 4), j);
-//  			printf("%d add ",i);
-//  			for(k=0; k < 16*n; k++) {
-//  				printf("%02X", tp[k]);
-//  			}
-//  			printf("\n");
-        		InvMixColumns(tp, j%4);
-//  			printf("%d mix ",i);
-//  			for(k=0; k < 16*n; k++) {
-// 				printf("%02X", tp[k]);
-//  			}
-//  			printf("\n");
-		}
-		InvShiftRows(tp, j);
-		InvSubBytes(tp, j);
-		AddRoundKey(tp, W, j);
-//		printf("%d add ",i);
-//		for(k=0; k < 16*n; k++) {
+      		AddRoundKey(tp, W+((i-1) << 4), n);
+//  		printf("%d add ",i);
+//  		for(k=0; k < 16*n; k++) {
 //			printf("%02X", tp[k]);
-//		}
-//		printf("\n");
+//  		}
+//  		printf("\n");
+      		InvMixColumns(tp, n);
+//  		printf("%d mix ",i);
+//  		for(k=0; k < 16*n; k++) {
+// 			printf("%02X", tp[k]);
+//  		}
+//  		printf("\n");
 	}
+	InvShiftRows(tp, n);
+	InvSubBytes(tp, n);
+	AddRoundKey(tp, W, n);
+//	printf("%d add ",i);
+//	for(k=0; k < 16*n; k++) {
+//		printf("%02X", tp[k]);
+//	}
+//	printf("\n");
+	
 }
 
 void ExpandKeys(uint8_t *key, uint8_t keysize, uint8_t *W, uint8_t Nk, uint8_t Nr) {
@@ -421,13 +416,13 @@ void aes_serial(uint8_t *in, uint8_t *chave, uint8_t **out, uint8_t tamanhoChave
 	uint64_t s = ((Nr+1) * sizeof(uint8_t)) << 4;
 	W = (uint8_t *)malloc(s);
 	ExpandKeys(chave, tamanhoChave, W, Nk, Nr);
-	if(acao) {
-		aes(in, W, Nr, offset);
-	} else {
-		invAes(in, W, Nr, offset);
-	}
 	*out = (uint8_t *)malloc(size);
 	memcpy(*out, in, size);
+	if(acao) {
+		aes(*out, W, Nr, offset);
+	} else {
+		invAes(*out, W, Nr, offset);
+	}
 	//printHexArray(out,sizeof(out));
 	//for(register uint8_t i=0; i<(size/sizeof(uint8_t)); i++) {
 	//	printf("%d:", out[i]);
@@ -435,7 +430,7 @@ void aes_serial(uint8_t *in, uint8_t *chave, uint8_t **out, uint8_t tamanhoChave
 	//printf("\n");
 }
 
-void aes_cuda(uint8_t *in, uint8_t *chave, uint8_t **out, uint8_t tamanhoChave, uint64_t offset, uint8_t acao) {
+void aes_cuda(uint8_t *in, uint8_t *chave, uint8_t **out, uint8_t tamanhoChave, uint64_t offset, uint32_t numeroBlocos, uint16_t numeroThreads, uint8_t acao) {
 	uint8_t *cp, *W, *cW, Nk, Nr;
 	Nk = tamanhoChave >> 5;
 	Nr = Nk + 6;
@@ -444,16 +439,18 @@ void aes_cuda(uint8_t *in, uint8_t *chave, uint8_t **out, uint8_t tamanhoChave, 
 	W = (uint8_t *)malloc(s);
 	cudaMalloc((void**)&cW, s);
 	ExpandKeys(chave, tamanhoChave, W, Nk, Nr);
-	cudaMemcpy(cW, W, s, cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(cW, W, s, cudaMemcpyHostToDevice);
 	cudaMalloc((void**)&cp, size);
-	cudaMemcpy(cp, in, size, cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(cp, in, size, cudaMemcpyHostToDevice);
 	if(acao) {
-		//caes(cp, cW, Nr, offset);
+		caes(cp, cW, Nr, numeroBlocos, numeroThreads, offset);
 	} else {
-		//cinvAes(cp, cW, Nr, offset);
+		cinvAes(cp, cW, Nr, numeroBlocos, numeroThreads, offset);
 	}
 	*out = (uint8_t *)malloc(size);
 	cudaMemcpy(*out, cp, size, cudaMemcpyDeviceToHost);
+	cudaFree(&cW);
+	cudaFree(&cp);
 	//printHexArray(out,(size/sizeof(uint8_t)));
 	//for(register uint8_t i=0; i<(size/sizeof(uint8_t)); i++) {
 	//	printf("%d:", out[i]);
@@ -488,67 +485,71 @@ void aleatorio(uint8_t *entrada, uint64_t size) {
 }
 
 int main(int argc, char **argv){
+	clock_t passo;
+	passo = clock();
+	uint8_t *chave, *out = 0, *in;
+	uint64_t offset;
 
-/*        if(argc < 4) {
-                printf("Número de parâmetros errados\nUse: aes enc CHAVE TEXTO para encriptar\n     aes dec CHAVE TEXTO para decriptar");
+        if(argc < 4) {
+                printf("Número de parâmetros errados\nUse: aes BLOCOS THREADSPORBLOCO TAMANHOCHAVE TAMANHOENTRADA\n");
 		return 1;
         }
-*/      uint8_t *chave, *out = 0, *in;
-	uint64_t offset;
-	time_t passo;
-	srand(time(NULL));
-	chave = (uint8_t *)malloc(16 * sizeof(uint8_t));
-	in = (uint8_t *)malloc(8176 * sizeof(uint8_t));
-	aleatorio(chave, 16);
-//	printf("\nchave ");
-//	for(register int i=0; i< 16; i++){
-//		printf("%02X", chave[i]);
-//	}
-	aleatorio(in, 8176);
-//	printf("\nconteudo ");
-//	for(register int i=0; i< 16; i++){
-//		printf("%02X", in[i]);
-//	}
-//	printf("\n");
-	offset = 8176 / 16;
-	uint8_t tamanhoChave = 16;
-	uint64_t tamanhoIn = 8176;
-//	char *chavein = "000102030405060708090a0b0c0d0e0f";
-//	char *inin = "00112233445566778899aabbccddeeff";	
-        //uint8_t tamanhoChave = stringToByteArray(chavein, &chave);
-        //ulong tamanhoIn  = stringToByteArray(inin, &in);
 
+	uint32_t numeroBlocos = atoi(argv[1]);
+	uint16_t numeroThreads = atoi(argv[2]);
+	uint8_t tamanhoChave = atoi(argv[3]);
+	uint64_t tamanhoIn = atoi(argv[4]);
+	
         if(tamanhoChave != 16 && tamanhoChave != 24 && tamanhoChave != 32) {
                 printf("Tamanho da chave inválido\n");
                 return 1;
         }
-
-        if(tamanhoIn % 16 != 0) {
-                printf("Tamanho de bloco inválido\n Deve ser múltiplo de 16\n resto: %d \n", (tamanhoIn % 16));
-                return 1;
-        }
+	if(tamanhoIn == 0) {
+		char *chavein = "000102030405060708090a0b0c0d0e0f";
+		char *inin = "3243f6a8885a308d313198a2e037073400112233445566778899aabbccddeeff";	
+	        tamanhoChave = stringToByteArray(chavein, &chave);
+	        tamanhoIn  = stringToByteArray(inin, &in);
+	} else {
+	       if(tamanhoIn % 16 != 0) {
+			printf("Tamanho de bloco inválido\n Deve ser múltiplo de 16\n resto: %d \n", (tamanhoIn % 16));
+			return 1;
+	        } else {
+			srand(time(NULL));
+			chave = (uint8_t *)malloc(tamanhoChave * sizeof(uint8_t));
+			in = (uint8_t *)malloc(tamanhoIn * sizeof(uint8_t));
+			aleatorio(chave, tamanhoChave);
+			aleatorio(in, tamanhoIn);
+		}
+	}		
+	offset = tamanhoIn / 16;
 //	printf("Entrada : ");
 //	printHexArray(in, tamanhoIn);
+	printf("Tempo de inicialização em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC/1000); 
 	printf("Criptografa CUDA\n");
 	passo = clock();
-	aes_cuda(in, chave, &out, tamanhoChave << 3, offset, 1);
-	printf("Tempo em ms %f\n",  (clock() - passo) / (double)(CLOCKS_PER_SEC/1000)); 
-//      printHexArray(out, tamanhoIn);
+	aes_cuda(in, chave, &out, tamanhoChave << 3, offset, numeroBlocos, numeroThreads, 1);
+	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
+//	printHexArray(out, tamanhoIn);
 	printf("Descriptografa CUDA\n");
 	passo = clock();
-	aes_cuda(out, chave, &out, tamanhoChave << 3, offset, 0);
-	printf("Tempo em ms %f\n",  (clock() - passo) / (double)(CLOCKS_PER_SEC/1000)); 
-//	printHexArray(in, tamanhoIn);
+	aes_cuda(out, chave, &out, tamanhoChave << 3, offset, numeroBlocos, numeroThreads, 0);
+	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
+//	printHexArray(out, tamanhoIn);
+	printf("Verificando algoritmo CUDA: ");
+	!memcmp(in, out, tamanhoIn)?printf("OK\n"):printf("Falha. Verifique o algoritmo\n");
 	printf("Criptografa Serial\n");
 	passo = clock();
 	aes_serial(in, chave, &out, tamanhoChave << 3, offset, 1);
-	printf("Tempo em ms %f\n",  (clock() - passo) / (double)(CLOCKS_PER_SEC/1000)); 
+	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
 //	printHexArray(out, tamanhoIn);
 	printf("Descriptografa Serial\n");
 	passo = clock();
 	aes_serial(out, chave, &out, tamanhoChave << 3, offset, 0);
-	printf("Tempo em ms %f\n",  (clock() - passo) / (double)(CLOCKS_PER_SEC/1000)); 
+	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
 //	printHexArray(out, tamanhoIn);
+	printf("Verificando algoritmo Serial: ");
+	!memcmp(in, out, tamanhoIn)?printf("OK\n"):printf("Falha. Verifique o algoritmo\n");
+	printf("\n");
 
         return EXIT_SUCCESS;
 }
