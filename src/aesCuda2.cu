@@ -75,7 +75,7 @@ __device__ void AddRoundKey(uint8_t *estado, uint8_t *chave) {
 __global__ void InvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr) {
 	__shared__ uint8_t estado[THREADS];
 	register int i;
-	estado[threadIdx.x] = cp[(blockIdx.x*blockDim.x)+threadIdx.x];
+	estado[threadIdx.x] = cp[(blockIdx.x*blockDim.x)+(blockIdx.y*blockDim.x*gridDim.x)+threadIdx.x];
 	__syncthreads();
 	AddRoundKey(estado, cW+(Nr << 4));
 	for(i=Nr; i>1; i--) {
@@ -88,13 +88,13 @@ __global__ void InvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr) {
 	InvSubBytes(estado);
 	AddRoundKey(estado, cW);
 	__syncthreads();
-	cp[(blockIdx.x*blockDim.x)+threadIdx.x] = estado[threadIdx.x];
+	cp[(blockIdx.x*blockDim.x)+(blockIdx.y*blockDim.x*gridDim.x)+threadIdx.x] = estado[threadIdx.x];
 }
 
 __global__ void Aes(uint8_t *cp, uint8_t *cW, uint8_t Nr) {
 	__shared__ uint8_t estado[THREADS];
 	register int i;
-	estado[threadIdx.x] = cp[(blockIdx.x*blockDim.x)+threadIdx.x];
+	estado[threadIdx.x] = cp[(blockIdx.x*blockDim.x)+(blockIdx.y*blockDim.x*gridDim.x)+threadIdx.x];
 	__syncthreads();
 	AddRoundKey(estado, cW);
 	for(i=1; i<Nr; i++) {
@@ -107,7 +107,7 @@ __global__ void Aes(uint8_t *cp, uint8_t *cW, uint8_t Nr) {
 	ShiftRows(estado);
 	AddRoundKey(estado, cW+(i << 4));
 	__syncthreads();
-	cp[(blockIdx.x*blockDim.x)+threadIdx.x] = estado[threadIdx.x];
+	cp[(blockIdx.x*blockDim.x)+(blockIdx.y*blockDim.x*gridDim.x)+threadIdx.x] = estado[threadIdx.x];
 }
 
 void ExpandKeys(uint8_t *key, uint8_t keysize, uint8_t *W, uint8_t Nk, uint8_t Nr) {
@@ -146,7 +146,7 @@ void ExpandKeys(uint8_t *key, uint8_t keysize, uint8_t *W, uint8_t Nk, uint8_t N
 	}
 }
 
-void aes_cuda(uint8_t *in, uint8_t *chave, uint8_t *out, uint8_t tamanhoChave, uint64_t offset, uint32_t numeroBlocos, uint8_t acao) {
+void aes_cuda(uint8_t *in, uint8_t *chave, uint8_t *out, uint8_t tamanhoChave, uint64_t offset, dim3 numeroBlocos, uint8_t acao) {
 	uint8_t *cp, *W, *cW, Nk, Nr;
 	Nk = tamanhoChave >> 5;
 	Nr = Nk + 6;
@@ -203,9 +203,9 @@ int main(int argc, char **argv){
 		return 1;
         }
 
-	uint64_t numeroBlocos = atoi(argv[1]);
-	uint8_t tamanhoChave = atoi(argv[2]);
-	uint64_t tamanhoIn = atoi(argv[3]);
+	dim3 numeroBlocos = (atoi(argv[1]), atoi(argv[2]));
+	uint8_t tamanhoChave = atoi(argv[3]);
+	uint64_t tamanhoIn = atoi(argv[4]);
 	
         if(tamanhoChave != 16 && tamanhoChave != 24 && tamanhoChave != 32) {
                 printf("Tamanho da chave inválido\n");

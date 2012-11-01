@@ -3,16 +3,82 @@
 #include <time.h>
 #include "aes.h"
 
-//#define xtime(x) ((x<<1) ^ (((x>>7) & 1) * 0x1b))
 #define aes_mul(a, b) ((a)&&(b)?iLogTable[(logTable[(a)]+logTable[(b)])%0xff]:0)
 #define caes_mul(a, b) ((a)&&(b)?CiLogTable[(ClogTable[(a)]+ClogTable[(b)])%0xff]:0)
 #define GET(M,X,Y) ((M)[((Y) << 2) + (X)])
 
-//const uint8_t size = 4*4*sizeof(uint8_t);
+int const THREADS = 512;
+
+__device__ void C2SubBytes(uint8_t *estado) {
+		estado[threadIdx.x] = Csbox[estado[threadIdx.x]];
+}
+
+__device__ void C2InvSubBytes(uint8_t *estado) {
+		estado[threadIdx.x] = CInvSbox[estado[threadIdx.x]];
+}
+
+__device__ void C2ShiftRows(uint8_t *estado) {
+		unsigned int idx  = threadIdx.x;
+		int row = idx % 4;
+		uint8_t t;
+	
+		t = estado[((idx + 4*row) % 16) + ((idx >> 4 ) << 4)];
+	
+		__syncthreads();
+
+		estado[idx] = t;
+}
+
+__device__ void C2InvShiftRows(uint8_t *estado) {
+		unsigned int idx  = threadIdx.x;
+		int row = idx % 4;
+		uint8_t t;
+	
+		t = estado[((idx - 4*row) % 16) + ((idx >> 4 ) << 4)];
+	
+		__syncthreads();
+
+		estado[idx] = t;
+}
+
+__device__ void C2MixColumns(uint8_t *estado) {
+		unsigned int idx = threadIdx.x;
+		int base = idx % 4;
+		uint8_t t;
+
+		if(base == 0) t = caes_mul(0x02, estado[idx]) ^ caes_mul(0x03, estado[idx+1]) ^ estado[idx+2] ^ estado[idx+3];
+		if(base == 1) t = estado[idx-1] ^ caes_mul(0x02, estado[idx]) ^ caes_mul(0x03, estado[idx+1]) ^ estado[idx+2];
+		if(base == 2) t = estado[idx-2] ^ estado[idx-1] ^ caes_mul(0x02, estado[idx]) ^ caes_mul(0x03, estado[idx+1]);
+		if(base == 3) t = caes_mul(0x03, estado[idx-3]) ^ estado[idx-2] ^ estado[idx-1] ^ caes_mul(0x02, estado[idx]);
+	
+		__syncthreads();
+
+		estado[idx] = t;
+}
+
+__device__ void C2InvMixColumns(uint8_t *estado) {
+		unsigned int idx = threadIdx.x;
+		int base = idx % 4;
+		uint8_t t;
+
+		if(base == 0) t = caes_mul(0x0e, estado[idx]) ^ caes_mul(0x0b, estado[idx+1]) ^ caes_mul(0x0d, estado[idx+2]) ^ caes_mul(0x09, estado[idx+3]);
+		if(base == 1) t = caes_mul(0x09, estado[idx-1]) ^ caes_mul(0x0e, estado[idx]) ^ caes_mul(0x0b, estado[idx+1]) ^ caes_mul(0x0d, estado[idx+2]);
+		if(base == 2) t = caes_mul(0x0d, estado[idx-2]) ^ caes_mul(0x09, estado[idx-1]) ^ caes_mul(0x0e, estado[idx]) ^ caes_mul(0x0b, estado[idx+1]);
+		if(base == 3) t = caes_mul(0x0b, estado[idx-3]) ^ caes_mul(0x0d, estado[idx-2]) ^ caes_mul(0x09, estado[idx-1]) ^ caes_mul(0x0e, estado[idx]);
+	
+		__syncthreads();
+
+		estado[idx] = t;
+}
+
+__device__ void C2AddRoundKey(uint8_t *estado, uint8_t *chave) {
+		estado[threadIdx.x] ^= chave[threadIdx.x % 16];
+}
+
 
 //Substitui o estado pelas entradas da S_BOX
 __global__ void CSubBytes(uint8_t *estado) {
-	estado[(blockIdx.x*blockDim.x)+threadIdx.x] = Csbox[estado[(blockIdx.x*blockDim.x)+threadIdx.x]];
+	estado[(blockIdx.x*blockDim.x)+(blockIdx.y*gridDim.x*blockDim.x)+threadIdx.x] = Csbox[estado[(blockIdx.x*blockDim.x)+(blockIdx.y*gridDim.x*blockDim.x)+threadIdx.x]];
 }
 
 void SubBytes(uint8_t *estado, uint64_t offset) {
@@ -24,7 +90,7 @@ void SubBytes(uint8_t *estado, uint64_t offset) {
 }
 
 __global__ void CInvSubBytes(uint8_t *estado) {
-		estado[(blockIdx.x*blockDim.x)+threadIdx.x] = CInvSbox[estado[(blockIdx.x*blockDim.x)+threadIdx.x]];
+		estado[(blockIdx.x*blockDim.x)+(blockIdx.y*gridDim.x*blockDim.x)+threadIdx.x] = CInvSbox[estado[(blockIdx.x*blockDim.x)+(blockIdx.y*gridDim.x*blockDim.x)+threadIdx.x]];
 }
 
 void InvSubBytes(uint8_t *estado, uint64_t offset) {
@@ -36,7 +102,7 @@ void InvSubBytes(uint8_t *estado, uint64_t offset) {
 }
 
 __global__ void CShiftRows(uint8_t *estado) {
-	uint64_t idx  = (blockIdx.x*blockDim.x)+threadIdx.x;
+	uint64_t idx  = (blockIdx.x*blockDim.x)+(blockIdx.y*gridDim.x*blockDim.x)+threadIdx.x;
 	int row = idx % 4;
 	uint8_t t;
 
@@ -63,7 +129,7 @@ void ShiftRows(uint8_t *estado, uint64_t offset) {
 }
 
 __global__ void CInvShiftRows(uint8_t *estado) {
-	uint64_t idx  = (blockIdx.x*blockDim.x)+threadIdx.x;
+	uint64_t idx  = (blockIdx.x*blockDim.x)+(blockIdx.y*gridDim.x*blockDim.x)+threadIdx.x;
 	int row = idx % 4;
 	uint8_t t;
 
@@ -91,7 +157,7 @@ void InvShiftRows(uint8_t *estado, uint64_t offset) {
 }
 
 __global__ void CMixColumns(uint8_t *estado) {
-	uint64_t idx = (blockIdx.x*blockDim.x)+threadIdx.x;
+	uint64_t idx = (blockIdx.x*blockDim.x)+(blockIdx.y*gridDim.x*blockDim.x)+threadIdx.x;
 	uint8_t base = idx % 4;
 	uint8_t t;
 
@@ -124,7 +190,7 @@ void MixColumns(uint8_t *estado, uint64_t offset) {
 }
 
 __global__ void CInvMixColumns(uint8_t *estado) {
-	uint64_t idx = (blockIdx.x*blockDim.x)+threadIdx.x;
+	uint64_t idx = (blockIdx.x*blockDim.x)+(blockIdx.y*gridDim.x*blockDim.x)+threadIdx.x;
 	uint8_t base = idx % 4;
 	uint8_t t;
 
@@ -157,7 +223,7 @@ void InvMixColumns(uint8_t *estado, uint64_t offset) {
 }
 
 __global__ void CAddRoundKey(uint8_t *estado, uint8_t *chave) {
-		estado[(blockIdx.x*blockDim.x)+threadIdx.x] ^= chave[(blockIdx.x*blockDim.x)+threadIdx.x % 16];
+		estado[(blockIdx.x*blockDim.x)+(blockIdx.y*gridDim.x*blockDim.x)+threadIdx.x] ^= chave[((blockIdx.x*blockDim.x)+(blockIdx.y*gridDim.x*blockDim.x)+threadIdx.x) % 16];
 }
 
 void AddRoundKey(uint8_t *estado, uint8_t *chave, uint64_t offset) {
@@ -168,7 +234,45 @@ void AddRoundKey(uint8_t *estado, uint8_t *chave, uint64_t offset) {
 	}
 }
 
-void cinvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr, uint32_t numeroBlocos, uint16_t numeroThreads, uint64_t n) {
+__global__ void C2InvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr) {
+	__shared__ uint8_t estado[THREADS];
+	register int i;
+	estado[threadIdx.x] = cp[(blockIdx.x*blockDim.x)+(blockIdx.y*blockDim.x*gridDim.x)+threadIdx.x];
+	__syncthreads();
+	C2AddRoundKey(estado, cW+(Nr << 4));
+	for(i=Nr; i>1; i--) {
+		C2InvShiftRows(estado);
+		C2InvSubBytes(estado);
+		C2AddRoundKey(estado, cW+((i-1) << 4));
+		C2InvMixColumns(estado);
+	}
+	C2InvShiftRows(estado);
+	C2InvSubBytes(estado);
+	C2AddRoundKey(estado, cW);
+	__syncthreads();
+	cp[(blockIdx.x*blockDim.x)+(blockIdx.y*blockDim.x*gridDim.x)+threadIdx.x] = estado[threadIdx.x];
+}
+
+__global__ void C2Aes(uint8_t *cp, uint8_t *cW, uint8_t Nr) {
+	__shared__ uint8_t estado[THREADS];
+	register int i;
+	estado[threadIdx.x] = cp[(blockIdx.x*blockDim.x)+(blockIdx.y*blockDim.x*gridDim.x)+threadIdx.x];
+	__syncthreads();
+	C2AddRoundKey(estado, cW);
+	for(i=1; i<Nr; i++) {
+		C2SubBytes(estado);
+		C2ShiftRows(estado);
+		C2MixColumns(estado);
+		C2AddRoundKey(estado, cW+(i << 4));
+	}
+	C2SubBytes(estado);
+	C2ShiftRows(estado);
+	C2AddRoundKey(estado, cW+(i << 4));
+	__syncthreads();
+	cp[(blockIdx.x*blockDim.x)+(blockIdx.y*blockDim.x*gridDim.x)+threadIdx.x] = estado[threadIdx.x];
+}
+
+void cinvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr, dim3 numeroBlocos, uint16_t numeroThreads, uint64_t n) {
 	
 	register uint8_t i;
 //	register uint64_t j;
@@ -222,7 +326,7 @@ void cinvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr, uint32_t numeroBlocos, uint16
 	
 }
 
-void caes(uint8_t *cp, uint8_t *cW, uint8_t Nr, uint32_t numeroBlocos, uint16_t numeroThreads, uint64_t n) {
+void caes(uint8_t *cp, uint8_t *cW, uint8_t Nr, dim3 numeroBlocos, uint16_t numeroThreads, uint64_t n) {
 
 	register uint8_t i;
 //	register uint64_t j;
@@ -429,7 +533,7 @@ void aes_serial(uint8_t *in, uint8_t *chave, uint8_t *out, uint8_t tamanhoChave,
 	//printf("\n");
 }
 
-void aes_cuda(uint8_t *in, uint8_t *chave, uint8_t *out, uint8_t tamanhoChave, uint64_t offset, uint32_t numeroBlocos, uint16_t numeroThreads, uint8_t acao) {
+void aes_cuda(uint8_t *in, uint8_t *chave, uint8_t *out, uint8_t tamanhoChave, uint64_t offset, dim3 numeroBlocos, uint16_t numeroThreads, uint8_t acao) {
 	uint8_t *cp, *W, *cW, Nk, Nr;
 	Nk = tamanhoChave >> 5;
 	Nr = Nk + 6;
@@ -454,6 +558,28 @@ void aes_cuda(uint8_t *in, uint8_t *chave, uint8_t *out, uint8_t tamanhoChave, u
 	//	printf("%d:", out[i]);
 	//}
 	//printf("\n");
+}
+
+void aes_cuda2(uint8_t *in, uint8_t *chave, uint8_t *out, uint8_t tamanhoChave, uint64_t offset, dim3 numeroBlocos, uint8_t acao) {
+	uint8_t *cp, *W, *cW, Nk, Nr;
+	Nk = tamanhoChave >> 5;
+	Nr = Nk + 6;
+	long size = 4*4*offset*sizeof(uint8_t);
+	uint64_t s = ((Nr+1) * sizeof(uint8_t)) << 4;
+	W = (uint8_t *)malloc(s);
+	cudaMalloc((void**)&cW, s);
+	ExpandKeys(chave, tamanhoChave, W, Nk, Nr);
+	cudaMemcpyAsync(cW, W, s, cudaMemcpyHostToDevice);
+	cudaMalloc((void**)&cp, size);
+	cudaMemcpyAsync(cp, in, size, cudaMemcpyHostToDevice);
+	if(acao) {
+		C2Aes<<<numeroBlocos, THREADS>>>(cp, cW, Nr);
+	} else {
+		C2InvAes<<<numeroBlocos, THREADS>>>(cp, cW, Nr);
+	}
+	cudaMemcpy(out, cp, size, cudaMemcpyDeviceToHost);
+	cudaFree(&cW);
+	cudaFree(&cp);
 }
 
 //Transforma a entrada em um array de char
@@ -485,18 +611,19 @@ void aleatorio(uint8_t *entrada, uint64_t size) {
 int main(int argc, char **argv){
 	clock_t passo;
 	passo = clock();
-	uint8_t *chave, *outs, *outc, *in;
+	uint8_t *chave, *outs, *outc, *outc2, *in;
 	uint64_t blocos;
 
         if(argc < 4) {
                 printf("Número de parâmetros errados\nUse: aes BLOCOS THREADSPORBLOCO TAMANHOCHAVE TAMANHOENTRADA\n");
 		return 1;
         }
-
-	uint64_t numeroBlocos = atoi(argv[1]);
-	int numeroThreads = atoi(argv[2]);
-	uint8_t tamanhoChave = atoi(argv[3]);
-	uint64_t tamanhoIn = atoi(argv[4]);
+	
+	dim3 numeroBlocos(atoi(argv[1]), atoi(argv[2]));
+	printf("\n x %d y %d z %d \n", numeroBlocos.x, numeroBlocos.y, numeroBlocos.z);
+	int numeroThreads = atoi(argv[3]);
+	uint8_t tamanhoChave = atoi(argv[4]);
+	uint64_t tamanhoIn = atoi(argv[5]);
 	
         if(tamanhoChave != 16 && tamanhoChave != 24 && tamanhoChave != 32) {
                 printf("Tamanho da chave inválido\n");
@@ -521,37 +648,62 @@ int main(int argc, char **argv){
 	}		
 	blocos = tamanhoIn / 16;
 	printf("%d\n", tamanhoIn);
-//	printf("Entrada : ");
-//	printHexArray(in, tamanhoIn);
+	printf("Entrada : ");
+	printHexArray(in, 32);
+	printf("Chave : ");
+	printHexArray(chave, tamanhoChave);
 	outs = (uint8_t *)malloc(tamanhoIn * sizeof(uint8_t));
 	memset(outs, 0, tamanhoIn);
 	outc = (uint8_t *)malloc(tamanhoIn * sizeof(uint8_t));
 	memset(outc, 0, tamanhoIn);
+	outc2 = (uint8_t *)malloc(tamanhoIn * sizeof(uint8_t));
+	memset(outc2, 0, tamanhoIn);
 	printf("Tempo de inicialização em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC/1000); 
+	
 	printf("Criptografa CUDA\n");
 	passo = clock();
 	aes_cuda(in, chave, outc, tamanhoChave << 3, blocos, numeroBlocos, numeroThreads, 1);
 	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
-//	printHexArray(out, tamanhoIn);
+	printHexArray(outc, 32);
+
+	printf("Criptografa CUDA Orimizado\n");
+	passo = clock();
+	aes_cuda2(in, chave, outc2, tamanhoChave << 3, blocos, numeroBlocos, 1);
+	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
+	printHexArray(outc2, 32);
+
 	printf("Criptografa Serial\n");
 	passo = clock();
 	aes_serial(in, chave, outs, tamanhoChave << 3, blocos, 1);
 	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
-//	printHexArray(out, tamanhoIn);
+	printHexArray(outs, 32);
+	
 	printf("Verificando consistencia entre CUDA e Serial: ");
 	!memcmp(outs, outc, tamanhoIn)?printf("OK\n"):printf("Falha. Verifique o algoritmo\n");
+	printf("Verificando consistencia entre CUDA Otimizado e Serial: ");
+	!memcmp(outs, outc2, tamanhoIn)?printf("OK\n"):printf("Falha. Verifique o algoritmo\n");
+
 	printf("Descriptografa CUDA\n");
 	passo = clock();
 	aes_cuda(outc, chave, outc, tamanhoChave << 3, blocos, numeroBlocos, numeroThreads, 0);
 	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
-//	printHexArray(out, tamanhoIn);
+	printHexArray(outc, 32);
 	printf("Verificando algoritmo CUDA: ");
 	!memcmp(in, outc, tamanhoIn)?printf("OK\n"):printf("Falha. Verifique o algoritmo\n");
+
+	printf("Descriptografa CUDA Otimizado\n");
+	passo = clock();
+	aes_cuda2(outc2, chave, outc2, tamanhoChave << 3, blocos, numeroBlocos, 0);
+	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
+	printHexArray(outc2, 32);
+	printf("Verificando algoritmo CUDA Otimizado: ");
+	!memcmp(in, outc2, tamanhoIn)?printf("OK\n"):printf("Falha. Verifique o algoritmo\n");
+	
 	printf("Descriptografa Serial\n");
 	passo = clock();
 	aes_serial(outs, chave, outs, tamanhoChave << 3, blocos, 0);
 	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
-//	printHexArray(out, tamanhoIn);
+	printHexArray(outs, 32);
 	printf("Verificando algoritmo Serial: ");
 	!memcmp(in, outs, tamanhoIn)?printf("OK\n"):printf("Falha. Verifique o algoritmo\n");
 	printf("\n");
