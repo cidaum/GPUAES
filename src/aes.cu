@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <stdint.h>
-#include <time.h>
+#include <sys/time.h>
 #include "aes.h"
+#include <cuda.h>
 
 #define aes_mul(a, b) ((a)&&(b)?iLogTable[(logTable[(a)]+logTable[(b)])%0xff]:0)
 #define caes_mul(a, b) ((a)&&(b)?CiLogTable[(ClogTable[(a)]+ClogTable[(b)])%0xff]:0)
@@ -608,9 +609,18 @@ void aleatorio(uint8_t *entrada, uint64_t size) {
 		entrada[i] = (uint8_t)(rand() % 0xff);
 }
 
+//calcula diferença de tempo
+double time_diff(struct timeval * prior, struct timeval * latter) {
+  double x =
+   (double)(latter->tv_usec - prior->tv_usec) / 1000.0L +
+   (double)(latter->tv_sec - prior->tv_sec) * 1000.0L;
+  return x;
+}
+
 int main(int argc, char **argv){
-	clock_t passo;
-	passo = clock();
+	struct timeval inicio, fim, inicioc, fimc, inicioc2, fimc2, inicios, fims;
+	gettimeofday(&inicio,NULL);
+	double tempo;
 	uint8_t *chave, *outs, *outc, *outc2, *in;
 	uint64_t blocos;
 
@@ -658,25 +668,33 @@ int main(int argc, char **argv){
 	memset(outc, 0, tamanhoIn);
 	outc2 = (uint8_t *)malloc(tamanhoIn * sizeof(uint8_t));
 	memset(outc2, 0, tamanhoIn);
-	printf("Tempo de inicialização em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC/1000); 
+	gettimeofday(&fim, NULL);
+	tempo = time_diff(&inicio, &fim);
+	printf("Tempo de inicialização em ms %f\n",  tempo); 
 	
 	printf("Criptografa CUDA\n");
-	passo = clock();
+	gettimeofday(&inicioc, NULL);
 	aes_cuda(in, chave, outc, tamanhoChave << 3, blocos, numeroBlocos, numeroThreads, 1);
-	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
-	printHexArray(outc, 32);
+	gettimeofday(&fimc, NULL);
+	tempo = time_diff(&inicioc, &fimc);
+	printf("Tempo em ms %f\n",  tempo); 
+//	printHexArray(outc, 32);
 
-	printf("Criptografa CUDA Orimizado\n");
-	passo = clock();
+	printf("Criptografa CUDA Otimizado\n");
+	gettimeofday(&inicioc2, NULL);
 	aes_cuda2(in, chave, outc2, tamanhoChave << 3, blocos, numeroBlocos, 1);
-	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
-	printHexArray(outc2, 32);
+	gettimeofday(&fimc2, NULL);
+	tempo = time_diff(&inicioc2, &fimc2);
+	printf("Tempo em ms %f\n",  tempo);
+//	printHexArray(outc2, 32);
 
 	printf("Criptografa Serial\n");
-	passo = clock();
+	gettimeofday(&inicios, NULL);
 	aes_serial(in, chave, outs, tamanhoChave << 3, blocos, 1);
-	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
-	printHexArray(outs, 32);
+	gettimeofday(&fims, NULL);
+	tempo = time_diff(&inicios, &fims);
+	printf("Tempo em ms %f\n",  tempo); 
+//	printHexArray(outs, 32);
 	
 	printf("Verificando consistencia entre CUDA e Serial: ");
 	!memcmp(outs, outc, tamanhoIn)?printf("OK\n"):printf("Falha. Verifique o algoritmo\n");
@@ -684,26 +702,32 @@ int main(int argc, char **argv){
 	!memcmp(outs, outc2, tamanhoIn)?printf("OK\n"):printf("Falha. Verifique o algoritmo\n");
 
 	printf("Descriptografa CUDA\n");
-	passo = clock();
+	gettimeofday(&inicioc, NULL);
 	aes_cuda(outc, chave, outc, tamanhoChave << 3, blocos, numeroBlocos, numeroThreads, 0);
-	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
-	printHexArray(outc, 32);
+	gettimeofday(&fimc, NULL);
+	tempo = time_diff(&inicioc, &fimc);
+	printf("Tempo em ms %f\n",  tempo); 
+//	printHexArray(outc, 32);
 	printf("Verificando algoritmo CUDA: ");
 	!memcmp(in, outc, tamanhoIn)?printf("OK\n"):printf("Falha. Verifique o algoritmo\n");
 
 	printf("Descriptografa CUDA Otimizado\n");
-	passo = clock();
+	gettimeofday(&inicioc2, NULL);
 	aes_cuda2(outc2, chave, outc2, tamanhoChave << 3, blocos, numeroBlocos, 0);
-	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
-	printHexArray(outc2, 32);
+	gettimeofday(&fimc2, NULL);
+	tempo = time_diff(&inicioc2, &fimc2);
+	printf("Tempo em ms %f\n",  tempo); 
+//	printHexArray(outc2, 32);
 	printf("Verificando algoritmo CUDA Otimizado: ");
 	!memcmp(in, outc2, tamanhoIn)?printf("OK\n"):printf("Falha. Verifique o algoritmo\n");
 	
 	printf("Descriptografa Serial\n");
-	passo = clock();
+	gettimeofday(&inicios, NULL);
 	aes_serial(outs, chave, outs, tamanhoChave << 3, blocos, 0);
-	printf("Tempo em ms %f\n",  (clock() - passo) / (double)CLOCKS_PER_SEC); 
-	printHexArray(outs, 32);
+	gettimeofday(&fims, NULL);
+	tempo = time_diff(&inicios, &fims);
+	printf("Tempo em ms %f\n",  tempo);
+//	printHexArray(outs, 32);
 	printf("Verificando algoritmo Serial: ");
 	!memcmp(in, outs, tamanhoIn)?printf("OK\n"):printf("Falha. Verifique o algoritmo\n");
 	printf("\n");

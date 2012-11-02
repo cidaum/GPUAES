@@ -1,21 +1,60 @@
 #include <stdint.h>
 
-//void aes_cuda(uint8_t *in, uint8_t *chave, uint8_t *out, uint8_t tamanhoChave, uint64_t offset, uint8_t acao); 
-void Caes(uint8_t *cp, uint8_t *cW, uint8_t Nr);
-void CinvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr);
-void aes(uint8_t *cp, uint8_t *cW, uint8_t Nr);
-void invAes(uint8_t *cp, uint8_t *cW, uint8_t Nr);
-void ExpandKeys(uint8_t *key, uint8_t keysize, uint8_t *W, uint8_t Nk, uint8_t Nr);
-void printHexArray(uint8_t *array, uint64_t size);
-uint8_t stringToByteArray(char *str, uint8_t *array[]);
+// Funções do AES Cuda
 
+//kernel
 __global__ void CSubBytes(uint8_t *estado);
-__global__ void CShiftRows(uint8_t *estado);
-__global__ void CMixColumns(uint8_t *estado);
-__global__ void CAddRoundKey(uint8_t *estado, uint8_t *chave);
 __global__ void CInvSubBytes(uint8_t *estado);
+__global__ void CShiftRows(uint8_t *estado);
 __global__ void CInvShiftRows(uint8_t *estado);
+__global__ void CMixColumns(uint8_t *estado);
 __global__ void CInvMixColumns(uint8_t *estado);
+__global__ void CAddRoundKey(uint8_t *estado, uint8_t *chave);
+
+//Host
+void cinvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr, dim3 numeroBlocos, uint16_t numeroThreads, uint64_t n);
+void caes(uint8_t *cp, uint8_t *cW, uint8_t Nr, dim3 numeroBlocos, uint16_t numeroThreads, uint64_t n);
+void aes_cuda(uint8_t *in, uint8_t *chave, uint8_t *out, uint8_t tamanhoChave, uint64_t offset, dim3 numeroBlocos, uint16_t numeroThreads, uint8_t acao);
+
+
+// Funções do AES Cuda Otimizado
+
+//Device
+__device__ void C2SubBytes(uint8_t *estado);
+__device__ void C2InvSubBytes(uint8_t *estado);
+__device__ void C2ShiftRows(uint8_t *estado);
+__device__ void C2InvShiftRows(uint8_t *estado);
+__device__ void C2MixColumns(uint8_t *estado);
+__device__ void C2InvMixColumns(uint8_t *estado);
+__device__ void C2AddRoundKey(uint8_t *estado, uint8_t *chave);
+
+//Kernel
+__global__ void C2InvAes(uint8_t *cp, uint8_t *cW, uint8_t Nr);
+__global__ void C2Aes(uint8_t *cp, uint8_t *cW, uint8_t Nr);
+
+//Host
+void aes_cuda2(uint8_t *in, uint8_t *chave, uint8_t *out, uint8_t tamanhoChave, uint64_t offset, dim3 numeroBlocos, uint8_t acao);
+
+
+// Funções do AES Serial
+void SubBytes(uint8_t *estado, uint64_t offset);
+void InvSubBytes(uint8_t *estado, uint64_t offset);
+void ShiftRows(uint8_t *estado, uint64_t offset);
+void InvShiftRows(uint8_t *estado, uint64_t offset);
+void MixColumns(uint8_t *estado, uint64_t offset);
+void InvMixColumns(uint8_t *estado, uint64_t offset);
+void AddRoundKey(uint8_t *estado, uint8_t *chave, uint64_t offset);
+void aes(uint8_t *tp, uint8_t *W, uint8_t Nr, uint64_t n);
+void invAes(uint8_t *tp, uint8_t *W, uint8_t Nr, uint64_t n);
+void aes_serial(uint8_t *in, uint8_t *chave, uint8_t *out, uint8_t tamanhoChave, uint64_t offset, uint8_t acao);
+
+
+// Funções aux
+void ExpandKeys(uint8_t *key, uint8_t keysize, uint8_t *W, uint8_t Nk, uint8_t Nr);
+uint8_t stringToByteArray(char *str, uint8_t *array[]);
+void printHexArray(uint8_t *array, uint64_t size);
+void aleatorio(uint8_t *entrada, uint64_t size);
+double time_diff(struct timeval * prior, struct timeval * latter);
 
 //Tabela S-BOX do device
 __device__ __constant__ uint8_t Csbox[256] = {
