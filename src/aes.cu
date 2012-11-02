@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include <sys/time.h>
 #include "aes.h"
-#include <cuda.h>
 
 #define aes_mul(a, b) ((a)&&(b)?iLogTable[(logTable[(a)]+logTable[(b)])%0xff]:0)
 #define caes_mul(a, b) ((a)&&(b)?CiLogTable[(ClogTable[(a)]+ClogTable[(b)])%0xff]:0)
