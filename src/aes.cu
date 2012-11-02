@@ -619,7 +619,7 @@ double time_diff(struct timeval * prior, struct timeval * latter) {
 int main(int argc, char **argv){
 	struct timeval inicio, fim, inicioc, fimc, inicioc2, fimc2, inicios, fims;
 	gettimeofday(&inicio,NULL);
-	double tempo;
+	double tempo, totalc, totalc2, totals;
 	uint8_t *chave, *outs, *outc, *outc2, *in;
 	uint64_t blocos;
 
@@ -675,7 +675,7 @@ int main(int argc, char **argv){
 	gettimeofday(&inicioc, NULL);
 	aes_cuda(in, chave, outc, tamanhoChave << 3, blocos, numeroBlocos, numeroThreads, 1);
 	gettimeofday(&fimc, NULL);
-	tempo = time_diff(&inicioc, &fimc);
+	totalc = tempo = time_diff(&inicioc, &fimc);
 	printf("Tempo em ms %f\n",  tempo); 
 //	printHexArray(outc, 32);
 
@@ -683,7 +683,7 @@ int main(int argc, char **argv){
 	gettimeofday(&inicioc2, NULL);
 	aes_cuda2(in, chave, outc2, tamanhoChave << 3, blocos, numeroBlocos, 1);
 	gettimeofday(&fimc2, NULL);
-	tempo = time_diff(&inicioc2, &fimc2);
+	totalc2 = tempo = time_diff(&inicioc2, &fimc2);
 	printf("Tempo em ms %f\n",  tempo);
 //	printHexArray(outc2, 32);
 
@@ -691,7 +691,7 @@ int main(int argc, char **argv){
 	gettimeofday(&inicios, NULL);
 	aes_serial(in, chave, outs, tamanhoChave << 3, blocos, 1);
 	gettimeofday(&fims, NULL);
-	tempo = time_diff(&inicios, &fims);
+	totals = tempo = time_diff(&inicios, &fims);
 	printf("Tempo em ms %f\n",  tempo); 
 //	printHexArray(outs, 32);
 	
@@ -705,6 +705,7 @@ int main(int argc, char **argv){
 	aes_cuda(outc, chave, outc, tamanhoChave << 3, blocos, numeroBlocos, numeroThreads, 0);
 	gettimeofday(&fimc, NULL);
 	tempo = time_diff(&inicioc, &fimc);
+	totalc += tempo;
 	printf("Tempo em ms %f\n",  tempo); 
 //	printHexArray(outc, 32);
 	printf("Verificando algoritmo CUDA: ");
@@ -715,6 +716,7 @@ int main(int argc, char **argv){
 	aes_cuda2(outc2, chave, outc2, tamanhoChave << 3, blocos, numeroBlocos, 0);
 	gettimeofday(&fimc2, NULL);
 	tempo = time_diff(&inicioc2, &fimc2);
+	totalc2 += tempo;
 	printf("Tempo em ms %f\n",  tempo); 
 //	printHexArray(outc2, 32);
 	printf("Verificando algoritmo CUDA Otimizado: ");
@@ -725,11 +727,14 @@ int main(int argc, char **argv){
 	aes_serial(outs, chave, outs, tamanhoChave << 3, blocos, 0);
 	gettimeofday(&fims, NULL);
 	tempo = time_diff(&inicios, &fims);
+	totals += tempo;
 	printf("Tempo em ms %f\n",  tempo);
 //	printHexArray(outs, 32);
 	printf("Verificando algoritmo Serial: ");
 	!memcmp(in, outs, tamanhoIn)?printf("OK\n"):printf("Falha. Verifique o algoritmo\n");
 	printf("\n");
+
+	printf("Tempo total cuda: %f Tempo total cuda o: %f Tempo total serial: %f", totalc, totalc2, totals); 
 
         return EXIT_SUCCESS;
 }
